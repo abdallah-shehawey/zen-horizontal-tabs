@@ -67,6 +67,7 @@ Edit, save, restart Zen.
 | `browser.tabs.insertRelatedAfterCurrent=true` | a link opens next to the page it came from |
 | `browser.tabs.insertAfterCurrent=false` | Ctrl+T goes to the end of the strip |
 | `zen.view.show-newtab-button-top=false` | new tabs at the end, not before the pinned ones |
+| `zen.view.compact.enable-at-startup=false` | compact mode stays off (see below) |
 | `toolkit.cosmeticAnimations.enabled=true` | tabs slide open and closed |
 
 **The trade-off:** Zen ties the floating Ctrl+T box and the startup screen to
@@ -77,6 +78,16 @@ opens that page in a tab. There is no third setting - `browser.startup.page`,
 `browser.startup.homepage=about:newtab` and `zen.urlbar.open-on-startup` were
 all tested and none of them changes it. Two alternatives sit commented out at
 the top of `user.js`.
+
+## Compact mode is off
+
+Zen's compact mode is built around the vertical sidebar: it makes
+`#navigator-toolbox` a full-height box, parks it off the **left** edge of the
+window and slides it back in while the pointer is near that edge. Here the
+toolbox *is* the top row, so the state leaves the window with no toolbar and a
+page that jumps whenever the pointer reaches the edge. The toggle is taken out
+of the row, the pref is forced off, and the CSS puts the state back to normal
+in case the keyboard shortcut ever turns it on.
 
 ## Does a Zen update wipe this?
 

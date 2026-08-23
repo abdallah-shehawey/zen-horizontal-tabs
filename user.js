@@ -25,3 +25,9 @@ user_pref("browser.tabs.insertAfterCurrent", false);
 user_pref("zen.view.show-newtab-button-top", false);
 // tab open / close animations
 user_pref("toolkit.cosmeticAnimations.enabled", true);
+
+// Zen's compact mode is built for its vertical sidebar (it parks the whole
+// toolbox off the left edge of the window), so it is kept off here - this is
+// the pref the toggle writes, and without forcing it the browser comes back
+// in that state after a restart.
+user_pref("zen.view.compact.enable-at-startup", false);

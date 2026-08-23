@@ -134,11 +134,16 @@
     font-weight: 500 !important;
   }
 
-  /* icons sit on top of the pill instead of in the row, so they can never
-     push the address off centre */
-  & #identity-box:is(.verifiedDomain, .chromeUI, .localResource, .extensionPage) {
+  /* only the padlock ICON goes. #identity-box itself must keep its box:
+     it is what Firefox anchors the passkey ("touch your security key"),
+     camera, microphone and location popups to, and an anchor with no box
+     makes those panels flicker in and out instead of standing still. */
+  &:not(:has(#notification-popup-box:not([hidden]))) #identity-box:is(.verifiedDomain, .chromeUI, .localResource, .extensionPage) > #identity-icon-box {
     display: none !important;
   }
+  & #identity-box:has(#notification-popup-box:not([hidden])) { opacity: 1 !important; }
+  /* the icons sit on top of the pill instead of in the row, so they can
+     never push the address off centre */
   & #identity-box,
   & #page-action-buttons {
     position: absolute !important;
@@ -281,6 +286,81 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   height: var(--ctab-strip) !important;
   align-items: center !important;
   gap: 2px !important;
+}
+
+/* ---- compact mode ----
+   Zen's compact mode is built for its vertical sidebar: it turns
+   #navigator-toolbox into a full-height box, parks it OFF the left edge of
+   the window (position: fixed; left: -sidebar-width) and slides it back in
+   while the pointer is near that edge. In this layout the toolbox IS the top
+   row, so that state leaves the window with no toolbar and a page that jumps
+   whenever the pointer reaches the edge. It is put back to normal here, and
+   the button that toggles it is taken out of the row - the pref
+   (zen.view.compact.enable-at-startup) is forced off in user.js as well,
+   otherwise the browser comes back in this state after a restart. */
+#zen-toggle-compact-mode { display: none !important; }
+
+:root[zen-compact-mode="true"] {
+  & #navigator-toolbox,
+  & #navigator-toolbox:not([animate="true"]) {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: calc(100% - var(--ctab-right)) !important;
+    height: var(--ctab-row) !important;
+    min-height: var(--ctab-row) !important;
+    max-height: var(--ctab-row) !important;
+    margin: 0 !important;
+    padding: 0 0 0 4px !important;
+    transform: none !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 2 !important;
+  }
+  & #navigator-toolbox #titlebar,
+  & #navigator-toolbox:not([animate="true"]) #titlebar {
+    position: static !important;
+    visibility: visible !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: var(--ctab-strip) !important;
+    padding: 0 !important;
+  }
+  & #zen-sidebar-top-buttons {
+    max-height: none !important;
+    min-height: 0 !important;
+    height: 28px !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+  }
+  & .zen-toolbar-background { display: none !important; }
+  & #zen-appcontent-navbar-wrapper {
+    opacity: 1 !important;
+    visibility: visible !important;
+    max-height: var(--ctab-row) !important;
+    pointer-events: auto !important;
+  }
+  & #zen-appcontent-wrapper,
+  & #zen-tabbox-wrapper { margin-top: 0 !important; }
+
+  /* compact mode also re-parents the nav bar and the top buttons INTO
+     #titlebar. The DOM order there is already [buttons][address][tabs]; what
+     breaks the row is that the buttons box and the tab strip both carry the
+     XUL flex="1" attribute, whose flex-grow no CSS can lower (see the note on
+     #zen-sidebar-top-buttons above), so they split the row in half. A
+     max-width caps the buttons instead - that one the XUL attribute does not
+     touch - and the strip takes everything that is left. */
+  & #titlebar {
+    flex-direction: row !important;
+    align-items: center !important;
+    width: auto !important;
+  }
+  & #zen-sidebar-top-buttons { max-width: 152px !important; }
+  & #TabsToolbar { min-width: 0 !important; }
 }
 
 /* ---- tabs: every tab is a favicon chip, the current one opens into a pill --- */
