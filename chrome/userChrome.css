@@ -1,0 +1,424 @@
+/* =========================================================================
+ * Zen Browser - horizontal tabs on the same row as the URL bar
+ * Tested on Zen 1.21.15b (Linux)
+ *
+ * Requires in about:config:
+ *   zen.tabs.vertical                                   = false
+ *   toolkit.legacyUserProfileCustomizations.stylesheets  = true
+ * ========================================================================= */
+
+:root {
+  --ctab-row: 36px;      /* height of the whole toolbar row */
+  --ctab-strip: 30px;    /* height of the tab strip inside it */
+  --ctab-chip: 38px;     /* width of a tab that is not the current one */
+  --ctab-active: 220px;  /* width of the current tab */
+  --ctab-peek: 120px;    /* width of a chip while the pointer is on it */
+  --ctab-tab-h: 26px;    /* height of a tab */
+  --ctab-right: 158px;   /* space kept for app menu + window buttons */
+  --ctab-url: 280px;     /* width of the address box */
+}
+
+/* ---- the toolbox becomes one horizontal row, content sits below it ---- */
+#browser { flex-direction: column !important; }
+
+#navigator-toolbox {
+  flex-direction: row !important;
+  align-items: center !important;
+  /* the row stops short of the window buttons: while the toolbox covered them
+     it swallowed every click on minimise / maximise / close */
+  width: calc(100% - var(--ctab-right)) !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: var(--ctab-row) !important;
+  min-height: var(--ctab-row) !important;
+  max-height: var(--ctab-row) !important;
+  padding-inline: 4px 0 !important;
+}
+
+#zen-sidebar-splitter { display: none !important; }
+#zen-appcontent-wrapper { flex: 1 1 auto !important; height: auto !important; min-height: 0 !important; }
+
+/* The tab strip claims the free space. The left cluster carries the XUL
+   flex="1" attribute, whose flex-grow cannot be overridden from here, so it is
+   out-grown instead of fought. */
+#titlebar {
+  flex: 1000 1 auto !important;
+  width: auto !important;
+  height: var(--ctab-strip) !important;
+  min-width: 0 !important;
+  flex-direction: row !important;   /* compact mode nests the toolbars in here */
+  align-items: center !important;
+}
+
+/* ---- left cluster: sidebar toggle, back / forward / reload / home ---- */
+#zen-sidebar-top-buttons { height: 28px !important; margin: 0 !important; padding: 0 !important; }
+#zen-toggle-compact-mode { order: 1 !important; }
+#back-button { order: 2 !important; }
+#forward-button { order: 3 !important; }
+#stop-reload-button { order: 4 !important; }
+#home-button { order: 5 !important; }
+#unified-extensions-button { order: 6 !important; }
+/* Keep a real separator: Zen's overflow check subtracts its width, and a
+   collapsed one makes every button flee into the ">>" menu. */
+#zen-sidebar-top-buttons-separator {
+  order: 7 !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  flex: 0 0 24px !important;
+}
+
+/* app menu sits at the far right, next to the window buttons */
+#PanelUI-button {
+  position: fixed !important;
+  top: 4px !important;
+  right: 122px !important;
+  z-index: 6 !important;
+}
+
+/* ---- URL bar: fixed and compact ---- */
+#nav-bar {
+  width: var(--ctab-url) !important;
+  flex: 0 0 var(--ctab-url) !important;
+  height: var(--ctab-strip) !important;
+  margin: 0 4px !important;
+}
+
+/* The address box.
+   Everything below is scoped to the RESTING bar only: when Zen floats the bar
+   (Ctrl+T, Ctrl+L, clicking it) the same #urlbar element is re-used at a
+   completely different size, and a fixed height or a pill background there
+   turns the floating search box into a stretched black bar. The floating
+   state is any of [focused] [open] [breakout-extend] [zen-newtab]
+   [zen-floating-urlbar]. */
+#nav-bar #urlbar-container { height: var(--ctab-tab-h) !important; min-height: var(--ctab-tab-h) !important; }
+
+#nav-bar #urlbar:not([focused]):not([open]):not([breakout-extend]):not([zen-newtab]):not([zen-floating-urlbar]) {
+  height: var(--ctab-tab-h) !important;
+  min-height: var(--ctab-tab-h) !important;
+
+  & .urlbar-background {
+    border-radius: 999px !important;
+    border: 1px solid color-mix(in srgb, currentColor 14%, transparent) !important;
+    background: color-mix(in srgb, currentColor 7%, transparent) !important;
+    box-shadow: none !important;
+    transition: background 120ms ease-out, border-color 120ms ease-out !important;
+  }
+  &:hover .urlbar-background {
+    background: color-mix(in srgb, currentColor 12%, transparent) !important;
+  }
+
+  /* the address is centred on the pill itself: the container's own padding is
+     asymmetric (8px / 4px), so the input is stretched over the whole box and
+     given equal padding instead of being centred inside that gap */
+  & .urlbar-input-container {
+    height: var(--ctab-tab-h) !important;
+    min-height: var(--ctab-tab-h) !important;
+    padding-inline: 0 !important;
+    position: relative !important;
+  }
+  & .urlbar-input-box {
+    position: absolute !important;
+    inset: 0 !important;
+    width: auto !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  & #urlbar-input {
+    text-align: center !important;
+    padding-inline: 26px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+  }
+
+  /* icons sit on top of the pill instead of in the row, so they can never
+     push the address off centre */
+  & #identity-box:is(.verifiedDomain, .chromeUI, .localResource, .extensionPage) {
+    display: none !important;
+  }
+  & #identity-box,
+  & #page-action-buttons {
+    position: absolute !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 2 !important;
+  }
+  & #identity-box { inset-inline-start: 5px !important; opacity: 0.6 !important; }
+  & #page-action-buttons { inset-inline-end: 3px !important; }
+  &:not(:hover) #page-action-buttons { opacity: 0 !important; pointer-events: none !important; }
+}
+
+/* ---- tab strip ---- */
+#TabsToolbar { flex-direction: row !important; align-items: center !important; height: var(--ctab-strip) !important; width: auto !important; flex: 1 1 auto !important; }
+#TabsToolbar > .toolbar-items { flex: 1 1 auto !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+#TabsToolbar-customization-target { flex: 1 1 auto !important; flex-direction: row !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+#tabbrowser-tabs { flex: 1 1 auto !important; flex-direction: row !important; min-width: 0 !important; height: var(--ctab-strip) !important; width: auto !important; }
+#zen-tabs-wrapper {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: var(--ctab-strip) !important;
+  width: auto !important;
+  position: relative !important;
+  /* a horizontal strip must never show a scrollbar: the bar showed up under
+     the tabs and scrolled the active tab out of sight */
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+}
+#tabbrowser-arrowscrollbox { flex: 1 1 auto !important; min-width: 0 !important; height: var(--ctab-strip) !important; }
+#tabbrowser-tabs, zen-workspace, .workspace-arrowscrollbox,
+.zen-workspace-tabs-section, .zen-essentials-container { scrollbar-width: none !important; }
+
+zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important; }
+.zen-current-workspace-indicator { display: none !important; }
+/* The tab list lives inside the arrowscrollbox's shadow root, which is hard
+   wired to orient="vertical"; ::part() rules are not honoured from a user
+   stylesheet, so the shadow flex column is turned sideways instead: a vertical
+   writing mode makes its block axis horizontal. The sections switch back to
+   horizontal-tb so their own content stays normal. */
+.workspace-arrowscrollbox {
+  height: var(--ctab-strip) !important;
+  max-height: none !important;
+  writing-mode: vertical-lr !important;
+}
+.zen-workspace-tabs-section {
+  writing-mode: horizontal-tb !important;
+  flex-direction: row !important;
+  height: var(--ctab-strip) !important;
+  align-items: center !important;
+}
+
+/* The tab list lives in a scroll container that sizes itself to its content,
+   so the strip only shrinks against a length. The two icon rows in front of it
+   are counted here - one rule per icon - so the cap follows them instead of
+   guessing, and the tabs always stay inside the window. */
+#tabbrowser-tabs { --ctab-ess: 0px; --ctab-pins: 0px; --ctab-sel: 0px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(1 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 40px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(2 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 80px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(3 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 120px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(4 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 160px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(5 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 200px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(6 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 240px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(7 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 280px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(8 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 320px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(9 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 360px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(10 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 400px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(11 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 440px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(12 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 480px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(13 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 520px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(14 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 560px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(15 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 600px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(16 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 640px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(17 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 680px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(18 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 720px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(19 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 760px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(20 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 800px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(21 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 840px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(22 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 880px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(23 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 920px; }
+#tabbrowser-tabs:has(.zen-essentials-container > :nth-child(24 of .tabbrowser-tab:not([hidden]))) { --ctab-ess: 960px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(1 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 52px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(2 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 92px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(3 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 132px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(4 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 172px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(5 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 212px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(6 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 252px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(7 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 292px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(8 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 332px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(9 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 372px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(10 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 412px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(11 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 452px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(12 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 492px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(13 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 532px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(14 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 572px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(15 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 612px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(16 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 652px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(17 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 692px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(18 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 732px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(19 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 772px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(20 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 812px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(21 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 852px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(22 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 892px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(23 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 932px; }
+#tabbrowser-tabs:has(zen-workspace[active] .zen-workspace-pinned-tabs-section > :nth-child(24 of .tabbrowser-tab:not([hidden]))) { --ctab-pins: 972px; }
+/* the current tab is wide wherever it lives, so an active pin costs more */
+#tabbrowser-tabs:has(:is(.zen-essentials-container, .zen-workspace-pinned-tabs-section) .tabbrowser-tab:is([selected], [visuallyselected])) {
+  --ctab-sel: 190px;
+}
+.zen-workspace-normal-tabs-section {
+  max-width: max(180px, calc(100vw - 760px - var(--ctab-ess) - var(--ctab-pins) - var(--ctab-sel))) !important;
+  /* past ~40 tabs even the narrowest chips no longer fit: scroll, still
+     without a bar */
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+}
+.zen-workspace-empty-space { display: none !important; }
+.zen-workspace-pinned-tabs-section { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
+.zen-workspace-normal-tabs-section { flex: 1 1 auto !important; width: auto !important; min-width: 0 !important; }
+
+/* Essentials: a compact icon row, never a grid block. Zen positions the
+   container absolutely, which made it hover over the whole strip and cover the
+   real tabs; in flow it claims its own slice of the row instead. */
+#zen-essentials {
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 40vw !important;
+  height: var(--ctab-strip) !important;
+  overflow: hidden !important;
+}
+#zen-essentials:not(:has(.tabbrowser-tab)) { display: none !important; }
+.zen-essentials-container {
+  position: static !important;
+  display: flex !important;
+  flex-direction: row !important;
+  width: max-content !important;
+  max-width: 100% !important;
+  height: var(--ctab-strip) !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+
+/* ---- tabs: every tab is a favicon chip, the current one opens into a pill --- */
+/* every width rule is scoped to [fadein]: Firefox drops that attribute while a
+   tab is on its way out and its own rules then collapse the tab to nothing -
+   that is the closing animation, and forcing a width here would freeze it */
+.tabbrowser-tab[fadein] {
+  flex: 0 1 var(--ctab-chip) !important;
+  width: var(--ctab-chip) !important;
+  min-width: 24px !important;
+  max-width: var(--ctab-chip) !important;
+}
+.tabbrowser-tab[fadein]:is([selected], [visuallyselected]) {
+  flex: 0 0 var(--ctab-active) !important;
+  width: var(--ctab-active) !important;
+  min-width: var(--ctab-active) !important;
+  max-width: var(--ctab-active) !important;
+}
+.tabbrowser-tab {
+  height: var(--ctab-tab-h) !important;
+  max-height: var(--ctab-tab-h) !important;
+}
+.tabbrowser-tab:is([selected], [visuallyselected]) {
+  height: calc(var(--ctab-tab-h) + 2px) !important;
+  max-height: calc(var(--ctab-tab-h) + 2px) !important;
+  font-weight: 600 !important;
+}
+/* a chip shows its favicon only; the current tab shows its title */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container { display: none !important; }
+.tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container { display: flex !important; }
+
+/* keep every tab inside its own box: the stack is taller than the strip by
+   default, and a close button in the flow would push past a chip's edge */
+.tabbrowser-tab .tab-stack,
+.tabbrowser-tab .tab-content { height: 100% !important; min-height: 0 !important; }
+.tabbrowser-tab .tab-content { position: relative !important; padding-inline: 6px !important; }
+.tabbrowser-tab .tab-background {
+  height: calc(100% - 2px) !important;
+  min-height: 0 !important;
+  align-self: center !important;
+  border-radius: 8px !important;
+}
+
+/* a chip carries no close button until the pointer is on it: at 38px the X
+   would BE the whole chip and every click would close the tab instead of
+   opening it */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-close-button { display: none !important; }
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-icon-stack { visibility: visible !important; }
+.tabbrowser-tab:is([selected], [visuallyselected]) .tab-close-button { display: block !important; }
+
+/* ---- hovering a chip opens a small preview of it ----
+   the chip widens into a box with the page title and an X, and folds back
+   when the pointer leaves. The 80ms delay is what keeps the strip still while
+   the pointer only crosses it; the label and the X wait out that delay with
+   animation-fill-mode: backwards, so nothing flashes inside a 38px box. */
+.tabbrowser-tab[fadein]:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
+  /* flex-shrink must be 0 here: with a full strip every chip is already down
+     on its 24px minimum, and a shrinkable box would just be squeezed back */
+  flex: 0 0 var(--ctab-peek) !important;
+  width: var(--ctab-peek) !important;
+  min-width: var(--ctab-peek) !important;
+  max-width: var(--ctab-peek) !important;
+  transition-delay: 80ms !important;
+  z-index: 3 !important;
+}
+.tabbrowser-tab:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
+  & .tab-label-container {
+    display: flex !important;
+    animation: ctab-peek 130ms ease-out 80ms backwards !important;
+  }
+  & .tab-label { font-size: 11.5px !important; }
+  & .tab-close-button {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    padding: 2px !important;
+    margin-inline: 2px 0 !important;
+    animation: ctab-peek 130ms ease-out 80ms backwards !important;
+  }
+}
+@keyframes ctab-peek {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* opening and closing slide instead of jumping */
+.tabbrowser-tab {
+  transition: width 120ms ease-out, min-width 120ms ease-out, max-width 120ms ease-out, opacity 120ms ease-out !important;
+}
+
+/* new-tab button after the tabs, icon only */
+#tabbrowser-arrowscrollbox-periphery { order: 99 !important; position: static !important; flex: 0 0 auto !important; width: auto !important; }
+#tabs-newtab-button { width: 32px !important; min-width: 32px !important; }
+#tabs-newtab-button .toolbarbutton-text { display: none !important; }
+
+/* no "Clear" (close unpinned tabs) button in the strip */
+.zen-workspace-close-unpinned-tabs-button { display: none !important; }
+.pinned-tabs-container-separator { width: 9px !important; min-width: 9px !important; }
+
+/* downloads etc. at the end of the row */
+#zen-sidebar-foot-buttons { flex: 0 0 auto !important; width: auto !important; height: 28px !important; }
+#zen-create-new-button { display: none !important; }
+
+/* ---- window buttons stay top-right ---- */
+#zen-appcontent-navbar-wrapper {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  left: auto !important;
+  width: auto !important;
+  height: var(--ctab-row) !important;
+  z-index: 10 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+}
+#zen-appcontent-navbar-container {
+  width: auto !important;
+  height: var(--ctab-row) !important;
+  align-items: center !important;
+  background: transparent !important;
+  padding: 0 !important;
+  opacity: 1 !important;
+}
+#PersonalToolbar { display: none !important; }
+.titlebar-buttonbox-container { height: var(--ctab-row) !important; align-items: center !important; opacity: 1 !important; }
+
+/* Zen dims this bar and drops its pointer events when it is not the active
+   toolbar, and the row above it is a window-drag region: both swallow the
+   clicks on minimise / maximise / close. */
+#zen-appcontent-navbar-wrapper,
+#zen-appcontent-navbar-container,
+#zen-appcontent-navbar-wrapper .titlebar-buttonbox-container,
+#zen-appcontent-navbar-wrapper .titlebar-buttonbox,
+#zen-appcontent-navbar-wrapper .titlebar-button,
+#PanelUI-button {
+  pointer-events: auto !important;
+  -moz-window-dragging: no-drag !important;
+}
