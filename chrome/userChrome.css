@@ -322,6 +322,19 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   min-height: 0 !important;
   align-self: center !important;
   border-radius: 8px !important;
+  /* the gap between two tabs is painted, not laid out: insetting the
+     background keeps every width calculation in this file intact */
+  margin-inline: 2px !important;
+  box-sizing: border-box !important;
+  transition: background 120ms ease-out !important;
+}
+/* without this two chips side by side are just two loose favicons with no
+   edge between them */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-background {
+  background: color-mix(in srgb, currentColor 8%, transparent) !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-background {
+  background: color-mix(in srgb, currentColor 15%, transparent) !important;
 }
 
 /* a chip carries no close button until the pointer is on it: at 38px the X

@@ -10,7 +10,7 @@ vertical sidebar. Tested on Zen 1.21.15b (Linux).
 ```
 
 * one 36px toolbar row, everything on it
-* a tab that is not the current one is a **38px favicon chip**
+* a tab that is not the current one is a **38px favicon chip** on its own faint pill, so two of them side by side read as two tabs
 * hovering a chip opens a **120px preview** with the page title and an X
 * the current tab is a **220px pill** with its title
 * the address box is 280px, the address is centred, domain only
