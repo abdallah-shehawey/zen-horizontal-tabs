@@ -37,11 +37,7 @@ user_pref("zen.view.compact.enable-at-startup", false);
 // and ships it display:none otherwise.
 user_pref("zen.tabs.show-newtab-vertical", true);
 
-// The bookmarks strip only on the new-tab page. This is Firefox's own setting
-// ("Show Bookmarks Toolbar: Only on New Tab"); userChrome.css used to hide the
-// strip outright, which overrode it silently. Values: always | never | newtab
+// The bookmarks strip only on the new-tab page (Firefox's own setting).
 user_pref("browser.toolbars.bookmarks.visibility", "newtab");
-
-// The downloads button appears on the first download and leaves again when the
-// list is emptied, instead of sitting in the toolbar permanently.
+// The downloads button appears on the first download and leaves again.
 user_pref("browser.download.autohideButton", true);

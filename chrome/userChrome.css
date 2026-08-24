@@ -61,9 +61,22 @@
      row and both boxes move together, so the whole popup fades as one thing.
      The hold is the smallest one that still survives the popup window being
      mapped a few frames after it opens (see the two blocks below). */
-  --ctab-t-panel: 110ms; /* the Ctrl+Tab switcher fading in */
+  --ctab-t-panel: 60ms;  /* the Ctrl+Tab switcher fading in */
+  --ctab-d-panel: 0ms;   /* NO hold on the switcher, unlike the menus: it
+                            already sits behind Firefox's own 200ms open delay
+                            (hard-coded setTimeout in browser-ctrlTab.js, no
+                            pref), so the fade runs while the popup window is
+                            still being mapped and the card is simply THERE,
+                            fully opaque, on its first painted frame. Speed
+                            over watchability - the owner's call (2026-08-25),
+                            "the panel must show up faster". */
   --ctab-t-menu: 130ms;  /* a menu fading in */
   --ctab-d-menu: 30ms;   /* ...held that long so the popup window exists first */
+  /* the red corner accents on the switcher card: a circle centred on each
+     corner, clipped by the card's own border-radius into a crescent that hugs
+     the curve. Purely static background layers - no animation, no mask. */
+  --ctab-corner-color: rgba(255, 59, 48, 0.92);
+  --ctab-corner-size: 30px;
   /* the selection moving from card to card inside the switcher. Repainting
      the ENTIRE panel - seven cards, their canvases and their labels, at the
      zoom below - measures 1.6ms of CPU (drawWindow over the panel rect,
@@ -1292,11 +1305,16 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
                                    Half a second after the key before there
                                    was anything to look at.
 
-   The entrance below is what replaced that: ONE fade, on this box only, 110ms,
-   after a 30ms hold. Seven per-card animations became one, nothing is
-   staggered, and the hold is there because a popup's first painted frame is
-   several frames after it opens - without it the fade is over before the
-   window is on screen and you see nothing at all.
+   The entrance below is what replaced that: ONE fade, on this box only, 60ms,
+   with NO hold. Seven per-card animations became one, nothing is staggered -
+   and the hold that the menus keep is deliberately absent here (2026-08-25,
+   the owner: "the panel must show up faster"). A popup's first painted frame
+   is several frames after it opens, so a hold-less 60ms fade is mostly or
+   fully over by the time the window is on screen: the card appears at full
+   opacity on its first real frame, which is the fastest CSS can make it.
+   Firefox's own 200ms setTimeout before _openPanel() (browser-ctrlTab.js,
+   hard-coded, no pref) still runs before any of this and can only be removed
+   by patching /opt/zen.
 
    `zoom` is back too, because the cards are what you are reading. It is the
    only way to change their size: ctrlTab.js hard-codes `canvasWidth =
@@ -1316,8 +1334,21 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   align-self: center !important;
   zoom: var(--ctab-switch-zoom) !important;
   animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph)
-             var(--ctab-d-menu) backwards !important;
-  background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
+             var(--ctab-d-panel) backwards !important;
+  /* the four gradients are the red corner accents (the owner liked the rig's
+     corner markers and asked for them, 2026-08-25); the card's border-radius
+     clips each circle into a crescent tucked into its corner. They sit under
+     the inset ring and the cards, and cost nothing - static layers. */
+  background:
+    radial-gradient(circle var(--ctab-corner-size) at 0 0,
+      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
+    radial-gradient(circle var(--ctab-corner-size) at 100% 0,
+      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
+    radial-gradient(circle var(--ctab-corner-size) at 0 100%,
+      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
+    radial-gradient(circle var(--ctab-corner-size) at 100% 100%,
+      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
+    var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   border-radius: var(--psu-roundness-zoomed, 24px) !important;
   box-shadow:
     0 14px 30px -16px rgba(0, 0, 0, 0.55),
