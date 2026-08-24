@@ -17,6 +17,15 @@
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-url: 280px;     /* width of the address box */
   --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
+  --ctab-gap: 8px;       /* breathing room on each side of the address box */
+
+  /* motion. One curve and three durations for the whole file, so nothing in
+     the row moves on a timing of its own. */
+  --ctab-ease: cubic-bezier(0.2, 0.9, 0.25, 1);        /* things changing size */
+  --ctab-ease-in: cubic-bezier(0.16, 1, 0.3, 1);       /* things arriving */
+  --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
+  --ctab-t-peek: 130ms;  /* the hover preview */
+  --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
      glance: Zen's own tint is rgb(11,10,11), which is invisible on a dark
@@ -65,13 +74,17 @@
 #home-button { order: 5 !important; }
 #unified-extensions-button { order: 6 !important; }
 /* Keep a real separator: Zen's overflow check subtracts its width, and a
-   collapsed one makes every button flee into the ">>" menu. */
+   collapsed one makes every button flee into the ">>" menu. It only has to be
+   non-zero, not wide - at 24px it was most of the 30px hole between the last
+   button and the address box (measured: last button ended at x=94, the pill
+   started at x=124; the rest was 4px of #nav-bar margin and 2px of Zen's own
+   container/background margins). */
 #zen-sidebar-top-buttons-separator {
   order: 7 !important;
-  width: 24px !important;
-  min-width: 24px !important;
-  max-width: 24px !important;
-  flex: 0 0 24px !important;
+  width: var(--ctab-gap) !important;
+  min-width: var(--ctab-gap) !important;
+  max-width: var(--ctab-gap) !important;
+  flex: 0 0 var(--ctab-gap) !important;
 }
 
 /* app menu sits at the far right, next to the window buttons */
@@ -87,7 +100,10 @@
   width: var(--ctab-url) !important;
   flex: 0 0 var(--ctab-url) !important;
   height: var(--ctab-strip) !important;
-  margin: 0 4px !important;
+  /* 2px, not 4: Zen already adds 1px of #urlbar-container margin and 1px of
+     .urlbar-background margin inside this box, so the visible gap is always
+     this plus 2 */
+  margin: 0 2px !important;
 }
 
 /* The address box.
@@ -444,7 +460,18 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
 }
 /* a chip shows its favicon only; the current tab shows its title */
 .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container { display: none !important; }
-.tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container { display: flex !important; }
+/* The current tab's title does not pop into existence: the chip is 38px wide
+   and the pill 220px, so the label arrives while the tab is still growing.
+   The 60ms delay is the width transition's head start - without it the text is
+   laid out in a box too narrow for it and visibly re-wraps. */
+.tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container {
+  display: flex !important;
+  animation: ctab-label-in 200ms var(--ctab-ease-in) 60ms backwards !important;
+}
+@keyframes ctab-label-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 
 /* keep every tab inside its own box: the stack is taller than the strip by
    default, and a close button in the flow would push past a chip's edge */
@@ -460,7 +487,9 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
      background keeps every width calculation in this file intact */
   margin-inline: 2px !important;
   box-sizing: border-box !important;
-  transition: background 120ms ease-out !important;
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    box-shadow var(--ctab-t-fast) ease-out !important;
 }
 /* without this two chips side by side are just two loose favicons with no
    edge between them */
@@ -491,6 +520,7 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   min-width: var(--ctab-peek) !important;
   max-width: var(--ctab-peek) !important;
   transition-delay: 80ms !important;
+  transition-duration: var(--ctab-t-peek) !important;
   z-index: 3 !important;
 }
 .tabbrowser-tab:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
@@ -515,10 +545,47 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   to   { opacity: 1; }
 }
 
-/* opening and closing slide instead of jumping */
+/* ---- how a tab moves ----
+   This one declaration is the open animation, the close animation and the
+   grow-into-a-pill on select, because all three are the same thing: Firefox
+   collapses a tab to max-width 0.1px the moment it drops [fadein] and expands
+   it back when it gets it, and the selected tab's width comes from the rules
+   above. userChrome.css is USER origin, so this !important is the last word -
+   which is exactly why the list below has to be complete.
+
+   `opacity` is deliberately NOT in it. Zen animates a tab open and closed in
+   JS (ZenUIManager.animateItemOpen / animateItemClose, the Motion library):
+   opacity 0->1 and scale .95->1, written frame by frame into the inline style.
+   A CSS transition on the same property turns every one of those frames into
+   its own 120ms ease, which drags the fade a whole transition behind the
+   scale - measured on a fresh tab, opacity crawled 1.00 -> 0.74 -> 0.51 -> ...
+   -> 0.00 instead of following Motion. Same reason `transform` is absent. */
 .tabbrowser-tab {
-  transition: width 120ms ease-out, min-width 120ms ease-out, max-width 120ms ease-out, opacity 120ms ease-out !important;
+  transition:
+    width var(--ctab-t-tab) var(--ctab-ease),
+    min-width var(--ctab-t-tab) var(--ctab-ease),
+    max-width var(--ctab-t-tab) var(--ctab-ease),
+    height var(--ctab-t-fast) var(--ctab-ease) !important;
 }
+
+/* Reordering by dragging is deliberately left alone. Firefox would slide the
+   other tabs aside with `transition: var(--tab-dragover-transition)`, but Zen
+   replaces the whole drag engine (ZenDragAndDrop) and moves them itself, in
+   JS: `elementAnimate(ele, { y: [translateY, 0] }, { duration: 100 })`, writing
+   `transform: translateY(...)` into the inline style frame by frame. Adding a
+   CSS transition on transform here would put a 200ms ease in front of every
+   one of those frames - the same conflict the opacity note above describes.
+   (That engine is hard-wired to the vertical sidebar, so it shoves the
+   neighbours on the wrong axis in this row. CSS cannot redirect a transform,
+   only cancel it, and cancelling would also stop the dragged tab following the
+   pointer - so this is left as Zen wrote it.) */
+
+/* Zen's open/close animation also moves `margin-bottom` by the tab's HEIGHT -
+   in the vertical sidebar that is how a tab makes room for itself, and in this
+   row it is a vertical hop. The horizontal equivalent is the width transition
+   above, which comes for free, so the margin is simply pinned. (Measured 0 on
+   every side before this rule, so nothing intended is being removed.) */
+.tabbrowser-tab { margin-block: 0 !important; }
 
 /* ---- the "+" after the last tab ----
    Zen ships #tabs-newtab-button as display:none and only reveals it behind
@@ -571,7 +638,35 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
 
 /* no "Clear" (close unpinned tabs) button in the strip */
 .zen-workspace-close-unpinned-tabs-button { display: none !important; }
-.pinned-tabs-container-separator { width: 9px !important; min-width: 9px !important; }
+.pinned-tabs-container-separator {
+  width: 9px !important;
+  min-width: 9px !important;
+  /* Zen positions this separator for the vertical sidebar and can leave a
+     `transform: translateY(-26px)` on it while pinned tabs are being
+     rearranged - seen mid-pin at y=-21 in a 30px row. A vertical offset on a
+     separator that divides a horizontal row is never right. */
+  transform: none !important;
+}
+
+/* ---- nothing empty may sit between the address box and the first tab ----
+   With no pinned tabs the pinned section still occupied 19px of the row (5px
+   padding + a 9px separator + 5px padding), which together with #nav-bar's
+   margin was a 27px hole before the first tab - measured, the pill ended at
+   x=400 and the first tab's background began at x=427. The separator only
+   means anything when there is something on both sides of it, so the whole
+   section is collapsed while the workspace has no pinned tab. :has() reads the
+   ACTIVE workspace only; a background workspace's pins must not keep the gap
+   open in this one. */
+zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-tab:not([hidden]))) {
+  & .zen-workspace-pinned-tabs-section {
+    display: none !important;
+  }
+}
+/* The wrapper stops pulling itself 5px left to compensate for that section,
+   and takes a small offset of its own instead, so the tabs clear the address
+   box by about as much as the address box clears the last button. */
+#zen-tabs-wrapper { margin-inline-start: 4px !important; }
+.zen-workspace-normal-tabs-section { padding-inline-start: 0 !important; }
 
 /* downloads etc. at the end of the row */
 #zen-sidebar-foot-buttons { flex: 0 0 auto !important; width: auto !important; height: 28px !important; }
@@ -645,14 +740,14 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
  * typing rewrites the results underneath without ever replaying it. */
 #urlbar[zen-floating-urlbar="true"][open] {
   transform-origin: top center !important;
-  animation: ctab-omni-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards !important;
+  animation: ctab-omni-in 220ms var(--ctab-ease-in) backwards !important;
 }
 @keyframes ctab-omni-in {
   from {
     opacity: 0;
-    transform: translateY(-12px) scale(0.955);
+    transform: translateY(-8px) scale(0.97);
   }
-  60% {
+  55% {
     opacity: 1;
   }
   to {
@@ -666,8 +761,8 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   border-radius: 16px !important;
   border: 1px solid color-mix(in srgb, currentColor 12%, transparent) !important;
   box-shadow:
-    0 32px 64px -16px rgba(0, 0, 0, 0.55),
-    0 8px 24px -8px rgba(0, 0, 0, 0.45) !important;
+    0 24px 48px -14px rgba(0, 0, 0, 0.5),
+    0 6px 18px -8px rgba(0, 0, 0, 0.38) !important;
   backdrop-filter: blur(24px) saturate(140%) !important;
 }
 
@@ -681,16 +776,16 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    you type and only appends when the result count grows, so this plays on the
    opening and on a genuinely new row - never on every keystroke. */
 #urlbar[zen-floating-urlbar="true"][open] .urlbarView-row {
-  animation: ctab-omni-row 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards !important;
+  animation: ctab-omni-row 180ms var(--ctab-ease-in) backwards !important;
   border-radius: 10px !important;
 }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(1) { animation-delay: 40ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(2) { animation-delay: 70ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(3) { animation-delay: 100ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(4) { animation-delay: 125ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(5) { animation-delay: 145ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(6) { animation-delay: 160ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(n + 7) { animation-delay: 170ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(1) { animation-delay: 25ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(2) { animation-delay: 45ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(3) { animation-delay: 62ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(4) { animation-delay: 76ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(5) { animation-delay: 87ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(6) { animation-delay: 95ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(n + 7) { animation-delay: 100ms !important; }
 @keyframes ctab-omni-row {
   from { opacity: 0; transform: translateY(7px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -784,5 +879,104 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   & #zen-main-app-wrapper,
   & .zen-toolbar-background {
     background: var(--zen-main-browser-background) !important;
+  }
+}
+
+/* =========================================================================
+ * Everything else that moves
+ * =========================================================================
+ * What is NOT here, and why: menus and panels (the app menu, the tab context
+ * menu, the extensions panel). On Linux each of those is its own OS-level
+ * popup window, and the two ways to animate one are both closed from here -
+ * `panel::part(content)` is not honoured from a USER-origin stylesheet
+ * (verified: an `outline` set through ::part on #tabContextMenu's content part
+ * never reached it, the element kept the initial `medium` width), and
+ * `-moz-window-transform` / `-moz-window-opacity` are not supported in this
+ * build (CSS.supports says false for both). Everything below is in-document,
+ * so it animates. */
+
+/* ---- press feedback on the buttons in the row ----
+   The icon scales, not the button: the button IS the hit target and shrinking
+   it would move its own edges out from under the pointer mid-click. */
+#zen-sidebar-top-buttons toolbarbutton .toolbarbutton-icon,
+#zen-sidebar-foot-buttons toolbarbutton .toolbarbutton-icon,
+#PanelUI-button .toolbarbutton-icon,
+#tabs-newtab-button .toolbarbutton-icon {
+  transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+#zen-sidebar-top-buttons toolbarbutton:active .toolbarbutton-icon,
+#zen-sidebar-foot-buttons toolbarbutton:active .toolbarbutton-icon,
+#PanelUI-button:active .toolbarbutton-icon,
+#tabs-newtab-button:active .toolbarbutton-icon {
+  transform: scale(0.84) !important;
+}
+
+/* the "+" answers the press with the whole chip, since it has no hit area to
+   lose - it is 26px of padding around a 14px glyph */
+#tabs-newtab-button {
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    opacity var(--ctab-t-fast) ease-out,
+    transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+#tabs-newtab-button:active { transform: scale(0.9) !important; }
+
+/* ---- the X on the current tab ---- */
+.tabbrowser-tab .tab-close-button {
+  border-radius: 6px !important;
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    opacity var(--ctab-t-fast) ease-out,
+    transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+.tabbrowser-tab .tab-close-button:hover {
+  background: color-mix(in srgb, currentColor 20%, transparent) !important;
+}
+.tabbrowser-tab .tab-close-button:active { transform: scale(0.85) !important; }
+
+/* ---- the favicon ----
+   A chip is nothing but its favicon, so the chip's whole hover response has to
+   live on that one image. */
+.tabbrowser-tab .tab-icon-image,
+.tabbrowser-tab .tab-icon-stack {
+  transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-icon-image {
+  transform: scale(1.12) !important;
+}
+.tabbrowser-tab:active .tab-icon-image { transform: scale(0.92) !important; }
+
+/* ---- essentials ---- */
+#zen-essentials .tabbrowser-tab .tab-background {
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    box-shadow var(--ctab-t-fast) ease-out !important;
+}
+
+/* ---- two pages side by side (split view) ----
+   Zen already transitions the panes, but on `inset 0.09s ease-out` - fast
+   enough that resizing reads as a jump. The selector keeps Zen's two escape
+   hatches: [zen-split-resizing] while the splitter is being dragged, and
+   .zen-split-view-no-transition when it wants an instant layout, so neither
+   the drag nor a rebuild is slowed down by this. */
+#tabbrowser-tabpanels[zen-split-view="true"]:not(.zen-split-view-no-transition):not([zen-split-resizing]) > [zen-split="true"] {
+  transition: inset 240ms var(--ctab-ease) !important;
+}
+
+/* ---- one switch for all of it ----
+   The row is dense and every animation in this file is layout-adjacent, so
+   reduced motion turns them off rather than shortening them. Zen reads the
+   same setting for its own JS animations (gReduceMotion). */
+@media (prefers-reduced-motion: reduce) {
+  .tabbrowser-tab,
+  .tabbrowser-tab .tab-background,
+  .tabbrowser-tab .tab-icon-image,
+  .tabbrowser-tab .tab-close-button,
+  #tabs-newtab-button,
+  #tabbrowser-tabpanels[zen-split-view="true"] > [zen-split="true"] {
+    transition: none !important;
+  }
+  .tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container {
+    animation: none !important;
   }
 }

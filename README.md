@@ -17,6 +17,8 @@ vertical sidebar. Tested on Zen 1.21.15b (Linux).
 * a **"+"** sits after the last tab
 * Ctrl+T's floating search box **fades and scales in**, its results fan in behind it
 * a **private window is violet**, not the same black as a normal one
+* one motion system: tabs grow and collapse on a single curve, the current
+  tab's title slides in, buttons answer a press, split panes ease
 * window buttons, app menu, downloads all keep working
 
 ## Install
@@ -54,7 +56,14 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-url: 280px;     /* width of the address box */
   --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
+  --ctab-gap: 8px;       /* room on each side of the address box */
   --ctab-private: 128, 116, 255;  /* the private-window accent, as R, G, B */
+
+  --ctab-ease: cubic-bezier(0.2, 0.9, 0.25, 1);   /* things changing size */
+  --ctab-ease-in: cubic-bezier(0.16, 1, 0.3, 1);  /* things arriving */
+  --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
+  --ctab-t-peek: 130ms;  /* the hover preview */
+  --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
 ```
 
@@ -84,6 +93,33 @@ opens that page in a tab. There is no third setting - `browser.startup.page`,
 `browser.startup.homepage=about:newtab` and `zen.urlbar.open-on-startup` were
 all tested and none of them changes it. Two alternatives sit commented out at
 the top of `user.js`.
+
+## Motion
+
+Zen already animates a lot of the browser in JS, with the Motion library, and
+the rule this file follows is **never transition a property Zen is animating**.
+A CSS transition on such a property does not replace the JS animation, it puts
+an ease in front of every frame the JS writes: with `opacity` in the tab
+transition, a new tab's fade crawled `1.00 -> 0.74 -> 0.51 -> ... -> 0.00`
+instead of following Motion. So the split is:
+
+| owned by this file | owned by Zen's JS |
+|---|---|
+| tab `width` / `min-width` / `max-width` / `height` | tab `opacity` and `scale` on open and close |
+| the current tab's title sliding in | dragging a tab to reorder |
+| button press, favicon hover, the X | pinning, spaces, glance, downloads |
+| split-view panes (`inset`) | compact mode |
+
+Two things Zen writes for the **vertical** sidebar are cancelled here, because
+in a horizontal row they are a vertical hop: `margin-bottom` on tab open/close
+(the horizontal equivalent, the width transition, is already free) and a stray
+`transform: translateY()` on the pinned-tabs separator.
+
+Menus and panels are **not** animated. On Linux each is its own OS-level popup
+window and both routes are closed from a user stylesheet: `panel::part(content)`
+is not honoured from USER origin (verified - an `outline` set that way never
+reached the element), and `-moz-window-transform` / `-moz-window-opacity` are
+not supported in this build.
 
 ## Private windows
 
