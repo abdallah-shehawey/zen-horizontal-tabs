@@ -6,13 +6,14 @@ vertical sidebar. Tested on Zen 1.21.15b (Linux).
 ![row](docs/row.png)
 
 ```
-[sidebar][<][>][reload][home]  [ address ]  [chip][chip][ open tab ][chip] ... [_][□][X]
+[sidebar][<][>][reload][home]  [ address ]  [ tab ][ tab ][ open tab ][ tab ] ... [_][□][X]
 ```
 
 * one 36px toolbar row, everything on it
-* a tab that is not the current one is a **38px favicon chip** on its own faint pill, so two of them side by side read as two tabs
-* hovering a chip opens a **120px preview** with the page title and an X
+* every tab that is not the current one is a **120px box** with its favicon and its title, on its own faint pill - the same size whether the pointer is on it or not; its X fades in under the pointer without moving anything
+* a **pinned** tab is a **38px favicon chip** instead, and opens to 120px while the pointer is on it
 * the current tab is a **220px pill** with its title
+* a full strip squeezes the 120px boxes down towards 24px rather than pushing the last tabs out of the window
 * the address box is 280px, the address is centred, domain only
 * a **"+"** sits after the last tab
 * Ctrl+T's floating search box **fades and scales in**, its results fan in behind it
@@ -49,9 +50,11 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
 :root {
   --ctab-row: 36px;      /* height of the whole toolbar row */
   --ctab-strip: 30px;    /* height of the tab strip inside it */
-  --ctab-chip: 38px;     /* width of a tab that is not the current one */
-  --ctab-peek: 120px;    /* width of a chip while the pointer is on it */
+  --ctab-tab: 120px;     /* width of a tab that is not the current one */
+  --ctab-chip: 38px;     /* width of a PINNED tab: favicon only */
+  --ctab-peek: var(--ctab-tab);   /* a pinned chip while the pointer is on it */
   --ctab-active: 220px;  /* width of the current tab */
+  --ctab-label: 12px;    /* the title on a tab that is not the current one */
   --ctab-tab-h: 26px;    /* height of a tab */
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-url: 280px;     /* width of the address box */
@@ -63,6 +66,7 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-ease-in: cubic-bezier(0.16, 1, 0.3, 1);  /* things arriving */
   --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
   --ctab-t-peek: 130ms;  /* the hover preview */
+  --ctab-t-omni: 300ms;  /* the floating address box arriving */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
 ```

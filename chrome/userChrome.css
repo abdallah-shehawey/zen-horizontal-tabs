@@ -10,9 +10,11 @@
 :root {
   --ctab-row: 36px;      /* height of the whole toolbar row */
   --ctab-strip: 30px;    /* height of the tab strip inside it */
-  --ctab-chip: 38px;     /* width of a tab that is not the current one */
+  --ctab-tab: 120px;     /* width of an open tab that is not the current one */
+  --ctab-chip: 38px;     /* width of a PINNED tab / an essential: favicon only */
   --ctab-active: 220px;  /* width of the current tab */
-  --ctab-peek: 120px;    /* width of a chip while the pointer is on it */
+  --ctab-peek: var(--ctab-tab);  /* a pinned chip while the pointer is on it */
+  --ctab-label: 12px;    /* the title on a tab that is not the current one */
   --ctab-tab-h: 26px;    /* height of a tab */
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-url: 280px;     /* width of the address box */
@@ -50,6 +52,7 @@
      Set it to 1 to get a plain crossfade with no compression at all. */
   --ctab-page-scale: 0.97;
   --ctab-t-peek: 130ms;  /* the hover preview */
+  --ctab-t-omni: 300ms;  /* the floating address box arriving */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
@@ -458,14 +461,28 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   & #TabsToolbar { min-width: 0 !important; }
 }
 
-/* ---- tabs: every tab is a favicon chip, the current one opens into a pill --- */
+/* ---- tabs: an open tab carries its title, a pinned one is a favicon chip --- */
 /* every width rule is scoped to [fadein]: Firefox drops that attribute while a
    tab is on its way out and its own rules then collapse the tab to nothing -
-   that is the closing animation, and forcing a width here would freeze it */
+   that is the closing animation, and forcing a width here would freeze it.
+
+   Every tab that is not the current one is the same width, pointer on it or
+   not: the row is meant to be read at a glance, and a strip of favicons is
+   only readable one tab at a time, under the pointer. flex-shrink stays at 1,
+   so a full strip still squeezes these down towards the 24px minimum instead
+   of pushing the last tabs out of the window - that squeeze IS the fallback
+   the favicon chip used to be. */
 .tabbrowser-tab[fadein] {
+  flex: 0 1 var(--ctab-tab) !important;
+  width: var(--ctab-tab) !important;
+  min-width: 24px !important;
+  max-width: var(--ctab-tab) !important;
+}
+/* a pinned tab and an essential stay icons - that is what pinning one is for,
+   and the strip cap further up counts them at 40px each */
+.tabbrowser-tab[fadein]:is([pinned], [zen-essential]) {
   flex: 0 1 var(--ctab-chip) !important;
   width: var(--ctab-chip) !important;
-  min-width: 24px !important;
   max-width: var(--ctab-chip) !important;
 }
 .tabbrowser-tab[fadein]:is([selected], [visuallyselected]) {
@@ -484,9 +501,10 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   font-weight: 600 !important;
 }
 /* ---- the title ----
-   A chip shows its favicon only and the current tab shows its title, but the
-   title is not switched on and off: the label box is always there and is
-   folded to max-width 0 on a chip, so it can open and close WITH the tab.
+   An open tab and the current one both carry their title; a pinned chip shows
+   its favicon only. That title is not switched on and off: the label box is
+   always there and is folded to max-width 0 on a chip, so it can open and
+   close WITH the tab.
 
    It used to be `display: none` on a chip, and that is a discrete property -
    Firefox drops the box on the same frame [selected] goes, leaving nothing to
@@ -514,9 +532,21 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
     opacity var(--ctab-t-peek) var(--ctab-ease-morph) !important;
 }
 .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container {
+  max-width: var(--ctab-tab) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+/* the fold, which is now only a pinned chip's */
+.tabbrowser-tab:not([selected]):not([visuallyselected]):is([pinned], [zen-essential]) .tab-label-container {
   max-width: 0 !important;
   opacity: 0 !important;
   transform: translateX(-8px) !important;
+}
+/* 120px holds the favicon, the X and about eight characters of title at the
+   13.3px the current tab uses; a step down buys a couple more without the row
+   reading as two different type sizes */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label {
+  font-size: var(--ctab-label) !important;
 }
 /* The open end of that fold. It was a keyframe animation - 200ms after a
    60ms delay - which ran on a clock of its own: the title was still fading in
@@ -559,19 +589,46 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   background: color-mix(in srgb, currentColor 15%, transparent) !important;
 }
 
-/* a chip carries no close button until the pointer is on it: at 38px the X
-   would BE the whole chip and every click would close the tab instead of
-   opening it */
-.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-close-button { display: none !important; }
+/* The X keeps its place in the flow on every open tab and only fades in under
+   the pointer, so the title never re-flows when the pointer crosses the row -
+   the 20px it costs is spent whether it is showing or not. It is not clickable
+   while it is invisible, so a click on that corner still selects the tab.
+
+   A pinned chip carries none at all: at 38px the button IS the whole chip and
+   every click would close the tab instead of opening it. */
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-close-button {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  padding: 2px !important;
+  margin-inline: 2px 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity var(--ctab-t-fast) ease-out !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]):hover .tab-close-button {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+.tabbrowser-tab:is([pinned], [zen-essential]):not([selected]):not([visuallyselected]) .tab-close-button {
+  display: none !important;
+}
 .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-icon-stack { visibility: visible !important; }
 .tabbrowser-tab:is([selected], [visuallyselected]) .tab-close-button { display: block !important; }
 
-/* ---- hovering a chip opens a small preview of it ----
-   the chip widens into a box with the page title and an X, and folds back
-   when the pointer leaves. The 80ms delay is what keeps the strip still while
-   the pointer only crosses it; the label and the X wait out that delay with
-   animation-fill-mode: backwards, so nothing flashes inside a 38px box. */
-.tabbrowser-tab[fadein]:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
+/* ---- hovering a pinned chip opens a small preview of it ----
+   the chip widens to the width of an open tab, with the page title and an X,
+   and folds back when the pointer leaves. The 80ms delay is what keeps the
+   strip still while the pointer only crosses it; the label and the X wait out
+   that delay with animation-fill-mode: backwards, so nothing flashes inside a
+   38px box.
+
+   Only a PINNED tab peeks now. An open tab is already this wide and shows its
+   title standing still, so growing it under the pointer would be the strip
+   shuffling for nothing. */
+.tabbrowser-tab[fadein][pinned]:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
   /* flex-shrink must be 0 here: with a full strip every chip is already down
      on its 24px minimum, and a shrinkable box would just be squeezed back */
   flex: 0 0 var(--ctab-peek) !important;
@@ -582,7 +639,7 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   transition-duration: var(--ctab-t-peek) !important;
   z-index: 3 !important;
 }
-.tabbrowser-tab:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
+.tabbrowser-tab[pinned]:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
   & .tab-label-container {
     display: flex !important;
     max-width: var(--ctab-peek) !important;
@@ -594,9 +651,11 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
     transition-delay: 80ms !important;
     transition-duration: var(--ctab-t-peek) !important;
   }
-  & .tab-label { font-size: 11.5px !important; }
+  & .tab-label { font-size: var(--ctab-label) !important; }
   & .tab-close-button {
     display: flex !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
     flex: 0 0 auto !important;
     width: 18px !important;
     height: 18px !important;
@@ -842,17 +901,42 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
  * while it scales.
  *
  * The animation is on #urlbar itself, which only gets [open] once per opening:
- * typing rewrites the results underneath without ever replaying it. */
+ * typing rewrites the results underneath without ever replaying it.
+ *
+ * It is deliberately NOT on --ctab-ease-in, and this is the whole reason the
+ * box used to arrive with no entrance at all "sometimes, and on some pages
+ * only the first time". --ctab-ease-in is ease-out-expo, which spends 72% of
+ * itself inside the first 40ms: measured on this very animation, opacity was
+ * already 0.946 at currentTime 50 of 220. Nothing in that is wrong - it is over
+ * before the box is on screen. The box does not exist until [open] and
+ * [zen-floating-urlbar] land TOGETHER (zen-omnibox.css only floats it when
+ * both are set, and both are set in one tick), and its first painted frame is
+ * whatever frame the browser can produce after laying out eight result rows
+ * with their favicons. One or two frames of delay is normal, and one or two
+ * frames was the entire animation - so on a quiet page you caught the tail of
+ * a fade and on a busy one the box was simply there.
+ *
+ * So this uses the same curve and the same reasoning as a tab switch further
+ * up (--ctab-ease-morph): a small ease-in buys the spread, and the movement
+ * is what is watchable, not the duration. Per 40ms of the 300ms, as a share
+ * of the whole entrance:
+ *
+ *   --ctab-ease-in @220ms      .72  .20  .06  .02          <- one blink
+ *   this curve @300ms          .13  .31  .26  .15  .09  .05  .02
+ *
+ * Being 40ms late now costs 13% of the entrance instead of 72% of it.
+ * The distance is bigger for the same reason: 8px and 3% of scale on a box
+ * that is 800px wide is not a movement, it is a flicker. */
 #urlbar[zen-floating-urlbar="true"][open] {
   transform-origin: top center !important;
-  animation: ctab-omni-in 220ms var(--ctab-ease-in) backwards !important;
+  animation: ctab-omni-in var(--ctab-t-omni) var(--ctab-ease-morph) backwards !important;
 }
 @keyframes ctab-omni-in {
   from {
     opacity: 0;
-    transform: translateY(-8px) scale(0.97);
+    transform: translateY(-16px) scale(0.94);
   }
-  55% {
+  45% {
     opacity: 1;
   }
   to {
@@ -879,20 +963,24 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 
 /* the rows fan in behind the box. Firefox REUSES .urlbarView-row elements as
    you type and only appends when the result count grows, so this plays on the
-   opening and on a genuinely new row - never on every keystroke. */
+   opening and on a genuinely new row - never on every keystroke.
+
+   Same curve as the box, and the stagger is spread over twice the ground it
+   was: the rows used to be all in by 100ms, i.e. before the box they sit in
+   had finished arriving. */
 #urlbar[zen-floating-urlbar="true"][open] .urlbarView-row {
-  animation: ctab-omni-row 180ms var(--ctab-ease-in) backwards !important;
+  animation: ctab-omni-row 220ms var(--ctab-ease-morph) backwards !important;
   border-radius: 10px !important;
 }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(1) { animation-delay: 25ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(2) { animation-delay: 45ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(3) { animation-delay: 62ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(4) { animation-delay: 76ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(5) { animation-delay: 87ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(6) { animation-delay: 95ms !important; }
-#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(n + 7) { animation-delay: 100ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(1) { animation-delay: 45ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(2) { animation-delay: 72ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(3) { animation-delay: 95ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(4) { animation-delay: 114ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(5) { animation-delay: 129ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(6) { animation-delay: 140ms !important; }
+#urlbar[zen-floating-urlbar="true"][open] .urlbarView-row:nth-child(n + 7) { animation-delay: 148ms !important; }
 @keyframes ctab-omni-row {
-  from { opacity: 0; transform: translateY(7px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
