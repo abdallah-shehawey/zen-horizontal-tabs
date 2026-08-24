@@ -23,16 +23,26 @@
      the row moves on a timing of its own. */
   --ctab-ease: cubic-bezier(0.2, 0.9, 0.25, 1);        /* things changing size */
   --ctab-ease-in: cubic-bezier(0.16, 1, 0.3, 1);       /* things arriving */
-  /* one tab handing over to another. The two curves above are steep on
-     purpose - a press or a hover has to answer instantly - but over the 182px
-     between a chip and a pill that steepness is a jump: --ctab-ease is 70%
-     of the way there after 38ms of its 190 and then crawls the last 55px
-     where nothing can be seen. This is a plain ease-out quart: 60% at 38ms,
-     so the click still answers at once, and the rest of the distance is
-     actually spent on screen. No overshoot - it must not bounce, two of
-     these run at the same time. */
-  --ctab-ease-morph: cubic-bezier(0.25, 1, 0.5, 1);     /* a tab morphing */
-  --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
+  /* One tab handing over to another. Everything else in this file is a steep
+     ease-out because a press or a hover has to answer instantly, but a tab
+     switch is not feedback on a press - it is 182px of travel that has to be
+     WATCHABLE, and a steep curve spends all of it before the eye arrives.
+     Measured, in px moved per 40ms of real time (the tab being taken, 38 ->
+     220):
+
+       --ctab-ease @190ms          131  38  10   3   0    <- one blink
+       ease-out quart @190ms       112  49  17   4   0    <- still a blink
+       this curve  @260ms           30  66  45  24  12    <- a movement
+
+     The first slice still moves 30px, so the click answers immediately; the
+     rest is spread across the four slices after it instead of being over
+     before the first one ends. The small ease-in is what buys that spread -
+     it must stay small, or the tab feels like it hesitates before obeying.
+     No overshoot: two of these run at once and a bounce would read as slop. */
+  --ctab-ease-morph: cubic-bezier(0.3, 0.1, 0.2, 1);    /* a tab morphing */
+  --ctab-t-tab: 190ms;   /* a tab arriving or leaving the strip */
+  --ctab-t-morph: 260ms; /* a tab trading places with another */
+  --ctab-t-page: 220ms;  /* the PAGE crossing over on a tab switch */
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
@@ -491,8 +501,10 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
 .tabbrowser-tab .tab-label-container {
   overflow: hidden !important;
   transition:
-    max-width var(--ctab-t-tab) var(--ctab-ease-morph),
-    transform var(--ctab-t-tab) var(--ctab-ease-morph),
+    max-width var(--ctab-t-morph) var(--ctab-ease-morph),
+    transform var(--ctab-t-morph) var(--ctab-ease-morph),
+    /* the text goes before the box does - half the fold, so the title is
+       already gone by the time the pill is too narrow to hold it */
     opacity var(--ctab-t-peek) var(--ctab-ease-morph) !important;
 }
 .tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container {
@@ -610,11 +622,19 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    -> 0.00 instead of following Motion. Same reason `transform` is absent. */
 .tabbrowser-tab {
   transition:
-    flex-basis var(--ctab-t-tab) var(--ctab-ease-morph),
-    width var(--ctab-t-tab) var(--ctab-ease-morph),
-    min-width var(--ctab-t-tab) var(--ctab-ease-morph),
-    max-width var(--ctab-t-tab) var(--ctab-ease-morph),
+    flex-basis var(--ctab-t-morph) var(--ctab-ease-morph),
+    width var(--ctab-t-morph) var(--ctab-ease-morph),
+    min-width var(--ctab-t-morph) var(--ctab-ease-morph),
+    max-width var(--ctab-t-morph) var(--ctab-ease-morph),
     height var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+
+/* Closing is not switching, so it does not get the switching clock. A tab on
+   its way out has dropped [fadein] - that is the one state that tells the two
+   apart from CSS - and it keeps the 190ms it always had, because the gap it
+   leaves behind should shut briskly, not be dwelt on. */
+.tabbrowser-tab:not([fadein]) {
+  transition-duration: var(--ctab-t-tab) !important;
 }
 
 /* Why `flex-basis` had to be in that list, and why it is what makes switching
@@ -640,7 +660,7 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    With flex-basis transitioning, all three properties leave together and the
    used size collapses to one curve at both ends: 220 -> 38 on the tab being
    left, 38 -> 220 on the tab being taken, the same easing over the same
-   190ms. They are exact mirrors, so their sum never changes - the rest of the
+   260ms. They are exact mirrors, so their sum never changes - the rest of the
    strip and the "+" hold still while the two tabs trade places.
 
    Nothing here is a property Zen animates itself: its open/close is Motion
@@ -1042,6 +1062,48 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   transition: inset 240ms var(--ctab-ease) !important;
 }
 
+/* ---- switching tabs: the page, not the strip ----
+   The strip is only half of a tab switch; the other half is the 1540x604 of
+   page underneath it, and Firefox swaps that with nothing at all.
+
+   It can be crossed over, and the reason is worth writing down. Every panel
+   in #tabbrowser-tabpanels is position: absolute, inset: 0, z-index: 0 -
+   they are all laid on top of each other, all `visibility: visible`, all
+   with a transparent background. Nothing in CSS hides the ones you are not
+   looking at: what decides whether a panel paints is `renderLayers` on its
+   <browser>, which Firefox turns off per tab. Measured on a switch, exactly
+   TWO panels have it on - the tab you went to and the tab you came from,
+   because Firefox keeps the previous tab's layers warm until the new one has
+   painted (that is what `async="true"` on the deck is for).
+
+   So the page you just left is still being drawn, underneath, for the length
+   of a switch. Fading the new one up over it is a real crossfade, not a fade
+   from the background - and it costs one compositor property.
+
+   z-index is not optional. With every panel at z-index 0 the stack is DOM
+   order, and a tab's panel is created when the tab is: go to a tab OLDER
+   than the one you are on and its panel sits UNDER the one you are leaving,
+   so fading it in would show nothing until the old layers dropped and the
+   page popped in. One line puts whichever panel is current on top and the
+   direction of the switch stops mattering.
+
+   Two states are left alone. Split view puts `zen-split-view="true"` on the
+   deck and hands `deck-selected` to several panels at once - an entrance on
+   each of them would fire on every rearrange, and Zen already transitions
+   those panels on `inset` (further down). Glance stamps `.zen-glance-overlay`
+   on its overlay and marks BOTH it and the page behind it `deck-selected`
+   (ZenGlanceManager, ~line 1275), and it animates them itself. Neither gets
+   the z-index either, so their own stacking is untouched. */
+#tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
+  > .browserSidebarContainer.deck-selected {
+  z-index: 1 !important;
+  animation: ctab-page-in var(--ctab-t-page) var(--ctab-ease-morph) !important;
+}
+@keyframes ctab-page-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ---- one switch for all of it ----
    The row is dense and every animation in this file is layout-adjacent, so
    reduced motion turns them off rather than shortening them. Zen reads the
@@ -1058,7 +1120,8 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   }
   /* the label is transitioned now, not animated; the X on a hovered chip is
      the only keyframe animation left in the strip */
-  .tabbrowser-tab .tab-close-button {
+  .tabbrowser-tab .tab-close-button,
+  #tabbrowser-tabpanels > .browserSidebarContainer.deck-selected {
     animation: none !important;
   }
 }
