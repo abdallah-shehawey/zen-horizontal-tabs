@@ -68,6 +68,7 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
   --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
+  --ctab-switch-zoom: 1.3;  /* how big the Ctrl+Tab switcher is */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
 ```
@@ -120,7 +121,11 @@ in a horizontal row they are a vertical hop: `margin-bottom` on tab open/close
 (the horizontal equivalent, the width transition, is already free) and a stray
 `transform: translateY()` on the pinned-tabs separator.
 
-A popup's own frame is **not** animated. On Linux each menu and panel is its
+Menus and panels are **shaped** but not animated: rounded inset highlights on
+the rows, hairline separators pulled in from the edges, a softer shadow and a
+larger corner radius, all of it through `--panel-*` custom properties and
+`currentColor` so Zen's theme keeps owning the actual colours. A popup's own
+frame is **not** animated. On Linux each menu and panel is its
 own OS-level window and both routes are closed from a user stylesheet:
 `panel::part(content)` is not honoured from USER origin (verified - an
 `outline` set that way never reached the element), and `-moz-window-transform`
