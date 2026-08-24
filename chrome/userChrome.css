@@ -53,6 +53,7 @@
   --ctab-page-scale: 0.97;
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
+  --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
@@ -993,6 +994,221 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 @media (prefers-reduced-motion: reduce) {
   #urlbar[zen-floating-urlbar="true"][open],
   #urlbar[zen-floating-urlbar="true"][open] .urlbarView-row {
+    animation: none !important;
+  }
+}
+
+/* =========================================================================
+ * Why one pixel of #nav-bar is never still
+ * =========================================================================
+ * Every entrance in this file used to be skipped at random - "sometimes it
+ * animates, sometimes it does not, and on some pages never". It is not the
+ * curve and it is not the selector. It is the browser's refresh clock.
+ *
+ * Firefox stops its refresh driver when nothing on screen is changing, and it
+ * does NOT reset the clock when it starts again: a CSS animation created by a
+ * synchronous style flush (which is exactly what Ctrl+T does - Zen sets the
+ * attributes and immediately measures the box to write --urlbar-width) is
+ * stamped with the LAST tick's time. If that tick was longer ago than the
+ * animation is long, the very first frame the animation is ever sampled on is
+ * already past its end, and Gecko fires animationstart and animationend in the
+ * same tick. Measured on this build, on the 300ms box entrance:
+ *
+ *   clock idle 868ms  ->  start and end in the SAME millisecond,
+ *                         animation alive for 0 of the next 97 frames
+ *   clock fresh (1ms) ->  start to end 285ms apart, alive for 42 frames,
+ *                         currentTime stepping 12, 24, 30, 36, 48 ...
+ *
+ * So the rule is simply: if the browser has not painted anything for longer
+ * than the animation lasts, there is no animation. That is the whole reason
+ * clicking "+" always worked and Ctrl+T often did not - reaching for the mouse
+ * repaints the row and refreshes the clock, while a keyboard shortcut on a
+ * page that has finished loading does not.
+ *
+ * The only lever a stylesheet has over that clock is to keep it running, and
+ * the only thing that keeps it running is an animation Gecko considers worth
+ * sampling. Measured, clock lag after five seconds of complete quiet:
+ *
+ *   nothing                                     58 191 ms
+ *   a custom property (--x: 0 -> 1)             64 576 ms   throttled, it
+ *                                                           changes nothing
+ *   opacity .999 -> 1                            5 590 ms   runs on the
+ *                                                           compositor, the
+ *                                                           main thread still
+ *                                                           sleeps
+ *   background-color on a 1px ::after            12 565 ms   XUL box, the
+ *                                                           pseudo never
+ *                                                           rendered
+ *   outline-color on a real 1px outline              26 ms   <- this one
+ *
+ * So: a 1px transparent inset outline on #nav-bar whose colour cycles between
+ * 0% and 0.4% black. It is invisible, it changes no layout, and it costs one
+ * style sample per frame. It is also the price of every other animation in
+ * this file working every time instead of most of the time.
+ *
+ * It is off while the window is not the one you are looking at, and off
+ * entirely if you have asked for reduced motion. To switch it off for good,
+ * delete the rule - everything else keeps working, entrances just go back to
+ * being skipped after the browser has been quiet for a moment. */
+@keyframes ctab-clock {
+  from { outline-color: rgba(0, 0, 0, 0); }
+  50%  { outline-color: rgba(0, 0, 0, 0.004); }
+  to   { outline-color: rgba(0, 0, 0, 0); }
+}
+#nav-bar:not(:-moz-window-inactive) {
+  outline: 1px solid transparent !important;
+  outline-offset: -1px !important;
+  animation: ctab-clock 4s linear infinite !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #nav-bar { animation: none !important; }
+}
+
+/* =========================================================================
+ * Ctrl+Tab: the tab switcher
+ * =========================================================================
+ * This panel is Firefox's, not Zen's (#ctrlTab-panel, ctrlTab.css), and it
+ * only exists when browser.ctrlTab.sortByRecentlyUsed is on. It is a XUL
+ * popup, so the panel itself cannot be animated from here for the reasons in
+ * "Everything else that moves" below - but its CONTENTS can, and better than
+ * anywhere else in this file: Gecko destroys a popup's frames when it closes
+ * and builds them again when it opens, so an animation on a preview replays on
+ * every single open instead of only the first one.
+ *
+ * The profile this was written against also has the "Better CtrlTab Panel"
+ * mod (chrome/zen-themes/), which owns the panel's size, padding and zoom.
+ * Nothing here fights that. The one thing it does take over is the colour:
+ * the mod picks its palette with light-dark(), the chrome resolves that to
+ * LIGHT, and the result is a flat grey slab in the middle of a dark browser.
+ * Forcing the panel's own color-scheme to dark makes the mod's own dark
+ * palette apply, so its settings still work - they just resolve to the half of
+ * light-dark() that matches the rest of the window. */
+:root #ctrlTab-panel {
+  color-scheme: dark !important;
+  /* Every value here defers to the mod and only supplies a floor for when it
+     is not installed. That is not politeness, it is the actual bug: the mod
+     declares its palette inside a commented-out block and expects Zen to
+     inject the pref values at runtime, so `var(--psu-better_ctrltab-background)`
+     can resolve to nothing at all - and a custom property that resolves to
+     nothing makes the whole declaration invalid, which drops the panel back to
+     Firefox's own hsla(0, 0%, 40%, 0.85). A flat mid-grey sheet is what that
+     is. With a fallback the panel is dark whether the mod answers or not, and
+     if it does answer, color-scheme above picks the dark half of its
+     light-dark() pair instead of the light one. */
+  --panel-background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.9)) !important;
+  --panel-background-color: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.9)) !important;
+  --panel-border-radius: var(--psu-roundness-zoomed, 20px) !important;
+  --panel-border-color: color-mix(in srgb, currentColor 12%, transparent) !important;
+  --panel-shadow: 0 32px 64px -18px rgba(0, 0, 0, 0.62),
+                  0 8px 24px -10px rgba(0, 0, 0, 0.45) !important;
+  --panel-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* the cards. The thumbnail is the content, so it gets the border and the
+   depth, and the frame around it stays quiet until it is the one selected. */
+:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-canvas {
+  border-radius: 12px !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 10px 24px -12px rgba(0, 0, 0, 0.6) !important;
+}
+:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-preview-inner {
+  border: none !important;
+  border-radius: 16px !important;
+  background: transparent !important;
+  transition:
+    background var(--ctab-t-fast) ease-out,
+    box-shadow var(--ctab-t-fast) ease-out !important;
+}
+
+/* the selected card. Firefox's own answer is a 2px #45a1ff border, which is
+   the one colour in the panel that belongs to no theme; this is a ring in
+   Zen's accent plus a lift, so the selection reads as the card coming forward
+   rather than as a box being drawn around it. Holding Ctrl and tabbing steps
+   through them, so the transition has to be short enough to keep up with a
+   key repeat: --ctab-t-fast is 110ms. */
+:root #ctrlTab-panel .ctrlTab-preview:focus .ctrlTab-preview-inner {
+  background: color-mix(in srgb, currentColor 12%, transparent) !important;
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--zen-primary-color, #7aa2ff) 70%, transparent),
+    0 12px 28px -14px rgba(0, 0, 0, 0.55) !important;
+  border: none !important;
+}
+:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-canvas,
+:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-label {
+  transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
+}
+:root #ctrlTab-panel .ctrlTab-preview:focus .ctrlTab-canvas {
+  transform: translateY(-3px) !important;
+}
+
+/* the title. Firefox draws it in bold with two text-shadows because the panel
+   used to be a translucent grey sheet over the page and the text had to
+   survive whatever was behind it; on an opaque dark panel that reads as a
+   halo. */
+:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-label {
+  font-weight: 500 !important;
+  text-shadow: none !important;
+  opacity: 0.62 !important;
+  transition: opacity var(--ctab-t-fast) ease-out !important;
+}
+:root #ctrlTab-panel .ctrlTab-preview:focus .ctrlTab-label {
+  opacity: 1 !important;
+  transform: translateY(-3px) !important;
+}
+
+/* the favicon badge. The default is a white #f9f9fa square, which is a hole in
+   a dark panel; this is the same badge, dark, with a hairline and a shadow so
+   it sits ON the thumbnail instead of in it. */
+:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-favicon[src] {
+  background-color: rgba(24, 24, 28, 0.92) !important;
+  border-radius: 10px !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 6px 14px -6px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* "show all tabs" becomes a pill instead of a grey bar */
+:root #ctrlTab-panel #ctrlTab-showAll {
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 6px 16px !important;
+  background-color: color-mix(in srgb, currentColor 10%, transparent) !important;
+  text-shadow: none !important;
+  transition: background-color var(--ctab-t-fast) ease-out !important;
+}
+:root #ctrlTab-panel #ctrlTab-showAll:focus,
+:root #ctrlTab-panel #ctrlTab-showAll:hover {
+  background-color: color-mix(in srgb, currentColor 20%, transparent) !important;
+}
+
+/* the entrance. Same curve and the same reasoning as the floating address box
+   above: the cards carry the movement, the panel carries the fade, and the
+   stagger is short because this panel is opened WHILE a key is held - by the
+   time the second Tab lands the entrance has to be finished and out of the
+   way. Cards, not rows, so the stagger is bigger per step and there are never
+   many of them. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
+  animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(1) { animation-delay: 0ms !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(2) { animation-delay: 26ms !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(3) { animation-delay: 48ms !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(4) { animation-delay: 66ms !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(5) { animation-delay: 80ms !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(n + 6) { animation-delay: 90ms !important; }
+@keyframes ctab-ctrltab-card {
+  from { opacity: 0; transform: translateY(14px) scale(0.92); }
+  55%  { opacity: 1; }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+:root #ctrlTab-panel #ctrlTab-showAll-container {
+  animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) 96ms backwards !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview,
+  :root #ctrlTab-panel #ctrlTab-showAll-container {
     animation: none !important;
   }
 }

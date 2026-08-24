@@ -67,6 +67,7 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
+  --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
 ```
@@ -119,11 +120,62 @@ in a horizontal row they are a vertical hop: `margin-bottom` on tab open/close
 (the horizontal equivalent, the width transition, is already free) and a stray
 `transform: translateY()` on the pinned-tabs separator.
 
-Menus and panels are **not** animated. On Linux each is its own OS-level popup
-window and both routes are closed from a user stylesheet: `panel::part(content)`
-is not honoured from USER origin (verified - an `outline` set that way never
-reached the element), and `-moz-window-transform` / `-moz-window-opacity` are
-not supported in this build.
+A popup's own frame is **not** animated. On Linux each menu and panel is its
+own OS-level window and both routes are closed from a user stylesheet:
+`panel::part(content)` is not honoured from USER origin (verified - an
+`outline` set that way never reached the element), and `-moz-window-transform`
+/ `-moz-window-opacity` are not supported in this build. What a popup's
+*contents* do is another matter, and they are the best case in the whole file:
+Gecko throws away a popup's frames when it closes and builds them again when it
+opens, so an animation on something inside one replays on every open rather
+than only the first. That is how the Ctrl+Tab switcher's cards arrive.
+
+### Why one pixel of `#nav-bar` is never still
+
+Firefox stops its refresh driver when nothing is changing on screen, and it
+does not reset the animation clock when it starts again. An animation created
+by a synchronous style flush - which is what Ctrl+T is, since Zen sets the
+attributes and immediately measures the box - is stamped with the *last* tick's
+time, so if the browser has been quiet for longer than the animation lasts, the
+first frame it is ever sampled on is already past its end. Measured here on the
+300ms entrance: with the clock idle 868ms it was alive for **0 of the next 97
+frames**, and `animationstart` and `animationend` fired in the same
+millisecond; with the clock fresh, 285ms and 42 frames. That is the whole
+reason clicking "+" always animated and Ctrl+T often did not - reaching for the
+mouse repaints the row and refreshes the clock, a keyboard shortcut on a page
+that has finished loading does not.
+
+The only lever CSS has is to keep that clock running, and only an animation
+Gecko thinks is worth sampling will do it. Clock lag after five seconds of
+complete quiet:
+
+| keep-alive | lag |
+|---|---|
+| none | 58 191 ms |
+| a custom property (`--x: 0 -> 1`) | 64 576 ms - throttled, it changes nothing |
+| `opacity: .999 -> 1` | 5 590 ms - runs on the compositor, the main thread still sleeps |
+| `background-color` on a 1px `::after` | 12 565 ms - XUL box, the pseudo never rendered |
+| **`outline-color` on a real 1px outline** | **26 ms** |
+
+So `#nav-bar` carries a 1px transparent inset outline whose colour cycles
+between 0% and 0.4% black. It is invisible, it changes no layout, and it costs
+one style sample per frame - which is a real cost, so it is off while the
+window is not the one you are looking at, and off entirely under
+`prefers-reduced-motion`. Delete the `ctab-clock` rule to be rid of it;
+everything else keeps working, entrances just go back to being skipped
+whenever the browser has been quiet for a moment.
+
+### The Ctrl+Tab switcher
+
+Only exists if `browser.ctrlTab.sortByRecentlyUsed` is on. The panel is
+Firefox's, and this file gives it the same dark card treatment as the floating
+address box: the thumbnails get the depth, the selected card gets a ring in
+Zen's accent colour and lifts instead of being outlined in `#45a1ff`, the
+favicon badge stops being a white square, and the cards fan in on a 200ms
+stagger. If the **Better CtrlTab Panel** mod is installed it keeps owning the
+panel's size, padding and zoom - every colour here falls back to that mod's own
+variables and only supplies a value for when they resolve to nothing, which is
+what leaves the panel a flat grey sheet in an otherwise dark browser.
 
 ## Private windows
 
