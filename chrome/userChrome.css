@@ -23,6 +23,15 @@
      the row moves on a timing of its own. */
   --ctab-ease: cubic-bezier(0.2, 0.9, 0.25, 1);        /* things changing size */
   --ctab-ease-in: cubic-bezier(0.16, 1, 0.3, 1);       /* things arriving */
+  /* one tab handing over to another. The two curves above are steep on
+     purpose - a press or a hover has to answer instantly - but over the 182px
+     between a chip and a pill that steepness is a jump: --ctab-ease is 70%
+     of the way there after 38ms of its 190 and then crawls the last 55px
+     where nothing can be seen. This is a plain ease-out quart: 60% at 38ms,
+     so the click still answers at once, and the rest of the distance is
+     actually spent on screen. No overshoot - it must not bounce, two of
+     these run at the same time. */
+  --ctab-ease-morph: cubic-bezier(0.25, 1, 0.5, 1);     /* a tab morphing */
   --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
@@ -458,19 +467,51 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
   max-height: calc(var(--ctab-tab-h) + 2px) !important;
   font-weight: 600 !important;
 }
-/* a chip shows its favicon only; the current tab shows its title */
-.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container { display: none !important; }
-/* The current tab's title does not pop into existence: the chip is 38px wide
-   and the pill 220px, so the label arrives while the tab is still growing.
-   The 60ms delay is the width transition's head start - without it the text is
-   laid out in a box too narrow for it and visibly re-wraps. */
+/* ---- the title ----
+   A chip shows its favicon only and the current tab shows its title, but the
+   title is not switched on and off: the label box is always there and is
+   folded to max-width 0 on a chip, so it can open and close WITH the tab.
+
+   It used to be `display: none` on a chip, and that is a discrete property -
+   Firefox drops the box on the same frame [selected] goes, leaving nothing to
+   animate. Measured on a switch: the title of the tab being left was gone by
+   the first frame, 190ms before its pill had finished closing, which is most
+   of why a switch read as one tab shutting and another opening. Firefox 154
+   parses `transition: display Xms allow-discrete` here and reports it in the
+   computed style, but no such transition ever starts (measured: zero entries
+   in getAnimations() on that frame), so the box has to keep existing instead.
+
+   Folding it costs nothing: `min-width: auto` would normally stop a flex item
+   collapsing below its own text, but the box already carries overflow: hidden,
+   which resolves that automatic minimum to 0. The favicon does not move -
+   with max-width 0 the label takes exactly the 0px it took while it was
+   display: none. Its max-width rides the same curve and the same 190ms as the
+   tab around it, so the title is clipped away at the speed the pill closes,
+   and unfolds at the speed the pill opens. */
+.tabbrowser-tab .tab-label-container {
+  overflow: hidden !important;
+  transition:
+    max-width var(--ctab-t-tab) var(--ctab-ease-morph),
+    transform var(--ctab-t-tab) var(--ctab-ease-morph),
+    opacity var(--ctab-t-peek) var(--ctab-ease-morph) !important;
+}
+.tabbrowser-tab:not([selected]):not([visuallyselected]) .tab-label-container {
+  max-width: 0 !important;
+  opacity: 0 !important;
+  transform: translateX(-8px) !important;
+}
+/* The open end of that fold. It was a keyframe animation - 200ms after a
+   60ms delay - which ran on a clock of its own: the title was still fading in
+   70ms after the pill had stopped growing. As a transition it cannot drift,
+   because it is the same declaration as the fold above and therefore the same
+   190ms and the same curve as the tab. `.tab-label` is white-space: nowrap,
+   so a box that is too narrow for it clips it rather than re-wrapping it -
+   which is what makes the head start the old animation needed unnecessary. */
 .tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container {
   display: flex !important;
-  animation: ctab-label-in 200ms var(--ctab-ease-in) 60ms backwards !important;
-}
-@keyframes ctab-label-in {
-  from { opacity: 0; transform: translateX(-8px); }
-  to   { opacity: 1; transform: translateX(0); }
+  max-width: var(--ctab-active) !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 /* keep every tab inside its own box: the stack is taller than the strip by
@@ -526,7 +567,14 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
 .tabbrowser-tab:not([zen-essential]):not([selected]):not([visuallyselected]):hover {
   & .tab-label-container {
     display: flex !important;
-    animation: ctab-peek 130ms ease-out 80ms backwards !important;
+    max-width: var(--ctab-peek) !important;
+    opacity: 1 !important;
+    transform: none !important;
+    /* the same 80ms wait and the same 130ms as the chip itself, so the label
+       opens on the frame the chip does and lands with it - neither shows
+       before the strip has committed to the preview */
+    transition-delay: 80ms !important;
+    transition-duration: var(--ctab-t-peek) !important;
   }
   & .tab-label { font-size: 11.5px !important; }
   & .tab-close-button {
@@ -562,11 +610,42 @@ zen-workspace { height: var(--ctab-strip) !important; padding-top: 0 !important;
    -> 0.00 instead of following Motion. Same reason `transform` is absent. */
 .tabbrowser-tab {
   transition:
-    width var(--ctab-t-tab) var(--ctab-ease),
-    min-width var(--ctab-t-tab) var(--ctab-ease),
-    max-width var(--ctab-t-tab) var(--ctab-ease),
+    flex-basis var(--ctab-t-tab) var(--ctab-ease-morph),
+    width var(--ctab-t-tab) var(--ctab-ease-morph),
+    min-width var(--ctab-t-tab) var(--ctab-ease-morph),
+    max-width var(--ctab-t-tab) var(--ctab-ease-morph),
     height var(--ctab-t-fast) var(--ctab-ease) !important;
 }
+
+/* Why `flex-basis` had to be in that list, and why it is what makes switching
+   tabs read as one movement.
+
+   A tab is a flex item, so `width` never decides its size: the used size is
+   max(min-width, min(max-width, flex-basis)). With flex-basis missing from
+   the list it snapped to its new value on the first frame and the two ends of
+   a switch were then clamped by DIFFERENT properties -
+
+     the tab being left  = max(min-width, 38px)  -> follows MIN-width
+     the tab being taken = min(max-width, 220px) -> follows MAX-width
+
+   and those two do not travel the same distance. min-width runs 220 -> 24
+   (a chip may be squeezed to 24px on a full strip), so the old tab reached
+   38px after 92 of the 190ms and stopped there, while the new one used all
+   190. Measured on a switch: the old tab was already a chip at t=94ms, the
+   new one was still 26px short of the pill at t=160ms. That is the "the old
+   one closed and then the new one opened" the whole row read like, and it is
+   also why the "+" after the last tab twitched: for those 100ms the strip was
+   182px narrower than at either end of the switch.
+
+   With flex-basis transitioning, all three properties leave together and the
+   used size collapses to one curve at both ends: 220 -> 38 on the tab being
+   left, 38 -> 220 on the tab being taken, the same easing over the same
+   190ms. They are exact mirrors, so their sum never changes - the rest of the
+   strip and the "+" hold still while the two tabs trade places.
+
+   Nothing here is a property Zen animates itself: its open/close is Motion
+   writing opacity / scale / margin-bottom, and its drag engine writes
+   transform (see the two notes above). flex-basis is ours alone. */
 
 /* Reordering by dragging is deliberately left alone. Firefox would slide the
    other tabs aside with `transition: var(--tab-dragover-transition)`, but Zen
@@ -970,13 +1049,16 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 @media (prefers-reduced-motion: reduce) {
   .tabbrowser-tab,
   .tabbrowser-tab .tab-background,
+  .tabbrowser-tab .tab-label-container,
   .tabbrowser-tab .tab-icon-image,
   .tabbrowser-tab .tab-close-button,
   #tabs-newtab-button,
   #tabbrowser-tabpanels[zen-split-view="true"] > [zen-split="true"] {
     transition: none !important;
   }
-  .tabbrowser-tab:is([selected], [visuallyselected]) .tab-label-container {
+  /* the label is transitioned now, not animated; the X on a hovered chip is
+     the only keyframe animation left in the strip */
+  .tabbrowser-tab .tab-close-button {
     animation: none !important;
   }
 }
