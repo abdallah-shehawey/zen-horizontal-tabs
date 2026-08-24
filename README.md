@@ -69,6 +69,7 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
   --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
   --ctab-switch-zoom: 1.3;  /* how big the Ctrl+Tab switcher is */
+  --ctab-t-menu: 130ms;     /* a menu's rows arriving */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
 ```
@@ -121,11 +122,22 @@ in a horizontal row they are a vertical hop: `margin-bottom` on tab open/close
 (the horizontal equivalent, the width transition, is already free) and a stray
 `transform: translateY()` on the pinned-tabs separator.
 
-Menus and panels are **shaped** but not animated: rounded inset highlights on
-the rows, hairline separators pulled in from the edges, a softer shadow and a
-larger corner radius, all of it through `--panel-*` custom properties and
-`currentColor` so Zen's theme keeps owning the actual colours. A popup's own
-frame is **not** animated. On Linux each menu and panel is its
+Menus and panels are shaped **and** their contents animate: rounded inset row
+highlights, hairline separators pulled in from the edges, a 16px corner radius,
+and the rows dropping in 5px on a 10ms stagger every time the menu opens. The
+box itself arrives instantly, because a popup's own frame genuinely cannot be
+animated - an `animation` on `menupopup` and one on `menupopup::part(content)`
+both produce **zero** entries in `getAnimations()`. Its children are ordinary
+light DOM and animate perfectly, and Gecko rebuilds a popup's frames on every
+open, so the entrance replays each time rather than only the first. Closing is
+not animated and cannot be: the popup is torn down synchronously.
+
+Shape reaches the box the same indirect way: `menupopup::part(content)` is not
+honoured from USER origin (a `padding: 21px` set that way left the part at
+5px), but inherited custom properties cross into the shadow tree, so
+`--panel-border-radius` and `--panel-padding` land. Colours are left to Zen -
+everything here derives from `currentColor`, so a theme change cannot strand
+it. A popup's own frame is **not** animated. On Linux each menu and panel is its
 own OS-level window and both routes are closed from a user stylesheet:
 `panel::part(content)` is not honoured from USER origin (verified - an
 `outline` set that way never reached the element), and `-moz-window-transform`

@@ -60,6 +60,7 @@
      and stay crisp, only the thumbnails are resampled, and they come from
      PageThumbs storage at a larger size than they are shown at. */
   --ctab-switch-zoom: 1.3;
+  --ctab-t-menu: 130ms;  /* a menu's rows arriving */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
@@ -1301,25 +1302,38 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
  * Menus and panels
  * =========================================================================
  * The right-click menu, the app menu behind the three dots, the bookmarks and
- * history menus, the extension panels. None of these can be ANIMATED from here
- * (see "Everything else that moves" below - each is its own OS-level window
- * and both routes into it are closed), but they can be shaped, and shaping is
- * most of what makes them look old: a menu whose highlight is a full-bleed
- * rectangle with square corners reads as a system menu from 2010 no matter
- * what colour it is.
+ * history menus, the extension panels.
+ *
+ * What a menu is made of here, because none of it is where you would expect:
+ * the `menupopup` element itself paints NOTHING (measured: transparent, radius
+ * 0, padding 0). The visible box is an `<arrowscrollbox part="arrowscrollbox
+ * content">` inside the popup's shadow DOM, and a USER-origin sheet cannot
+ * reach it - `menupopup::part(content) { padding: 21px }` from this file
+ * leaves the part at 5px, which confirms the older ::part finding. The way in
+ * is inherited custom properties: they cross into the shadow tree and the part
+ * reads them, so `--panel-border-radius` and `--panel-padding` set here DO
+ * land on that box (measured 14px / 5px before this pass). The menu ITEMS are
+ * ordinary light DOM and take rules directly.
+ *
+ * The same split decides what can move. **A popup frame cannot be animated at
+ * all**: an `animation` on `menupopup`, and one on `::part(content)`, both
+ * produce zero entries in `getAnimations()` - Gecko simply does not run
+ * animations on a popup's own frame, which is the real content of the older
+ * "menus cannot be animated" note. Its CHILDREN animate perfectly (verified by
+ * scrubbing: opacity 0 -> 1, transform responding), and because Gecko destroys
+ * a popup's frames on close and rebuilds them on open, that entrance replays
+ * every single time the menu is opened. So the box arrives instantly and its
+ * contents fan in behind it, which is what reads as the menu opening.
+ *
+ * Closing is not animated and cannot be: the popup is torn down synchronously,
+ * so there is no state left to animate out of.
  *
  * Colours are deliberately NOT set. Zen's theme owns those, and a user sheet
- * that hardcodes menu backgrounds is a menu that stops matching the browser
- * the next time the theme changes. Everything here is geometry, spacing and
- * the hover response - all of it derived from `currentColor`, so it follows
- * whatever palette is in force.
- *
- * `--panel-*` custom properties are the way in: a panel's visible box lives in
- * its shadow DOM behind `::part(content)`, which a USER-origin sheet cannot
- * reach (verified - an outline set that way never landed), but inherited
- * custom properties cross that boundary and the parts read them. */
+ * that hardcodes menu backgrounds stops matching the browser the moment the
+ * theme changes. Everything here is geometry, spacing, motion and a hover
+ * response derived from `currentColor`. */
 
-/* ---- the popup box itself ---- */
+/* ---- the box ---- */
 menupopup,
 panel[type="arrow"],
 #appMenu-popup,
@@ -1328,77 +1342,140 @@ panel[type="arrow"],
 #protections-popup,
 #identity-popup,
 #permission-popup {
-  --panel-border-radius: 14px !important;
+  --panel-border-radius: 16px !important;
   --panel-border-color: color-mix(in srgb, currentColor 12%, transparent) !important;
   --panel-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.55),
                   0 6px 18px -8px rgba(0, 0, 0, 0.4) !important;
+  /* Zen's own knobs for the rows inside a panel - the supported route, and
+     the one the toolkit reads from inside the shadow tree */
+  --arrowpanel-menuitem-border-radius: 10px !important;
+  --arrowpanel-menuitem-padding-block: 8px !important;
+  --uc-arrowpanel-menuitem-margin-inline: 6px !important;
+  --panel-separator-margin-vertical: 5px !important;
 }
 menupopup {
-  --panel-padding: 5px 4px !important;
+  --panel-padding: 7px 6px !important;
+  --menuitem-padding: 7px !important;
 }
 
 /* ---- the rows ----
-   The highlight is inset and rounded, which is the whole difference between
-   "a list of commands" and "a menu". The inset comes from a margin on the row
-   rather than padding on the popup, so a submenu arrow still sits where the
-   platform expects it. */
+   The highlight is inset and rounded, which is most of the difference between
+   "a list of commands" and "a menu": a full-bleed square highlight is what
+   makes a menu read as a system menu from a decade ago. The inset is a margin
+   on the row rather than padding on the popup, so submenu arrows and checkmarks
+   still sit where the platform puts them. */
 menupopup > menuitem,
 menupopup > menu,
 menupopup > menucaption {
-  border-radius: 9px !important;
-  margin-inline: 3px !important;
-  padding-block: 6px !important;
-  transition: background-color var(--ctab-t-fast) ease-out !important;
+  border-radius: 10px !important;
+  margin-inline: 4px !important;
+  padding-block: 7px !important;
+  transition:
+    background-color var(--ctab-t-fast) ease-out,
+    color var(--ctab-t-fast) ease-out !important;
 }
 menupopup > menuitem[_moz-menuactive="true"]:not([disabled="true"]),
 menupopup > menu[_moz-menuactive="true"]:not([disabled="true"]) {
-  background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
+  background-color: color-mix(in srgb, currentColor 16%, transparent) !important;
 }
 menupopup > menuitem[disabled="true"],
 menupopup > menu[disabled="true"] {
   opacity: 0.45 !important;
 }
 
-/* the little back / forward / reload / bookmark strip at the top of a
-   right-click menu is a menugroup, so its children are not direct children of
-   the popup and the rule above does not reach them */
+/* the back / forward / reload / bookmark strip at the top of a right-click
+   menu lives in a menugroup, so its children are not direct children of the
+   popup and the rules above do not reach them */
 menupopup menugroup > menuitem {
-  border-radius: 8px !important;
-  margin-inline: 2px !important;
+  border-radius: 9px !important;
+  margin-inline: 3px !important;
   transition: background-color var(--ctab-t-fast) ease-out !important;
 }
 menupopup menugroup > menuitem[_moz-menuactive="true"]:not([disabled="true"]) {
-  background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
+  background-color: color-mix(in srgb, currentColor 16%, transparent) !important;
 }
 
-/* ---- separators ----
-   A separator is a grouping cue, not a rule drawn across the menu: inset it
-   and make it a hairline. */
+/* ---- separators: a grouping cue, not a rule drawn across the menu ---- */
 menupopup > menuseparator {
   appearance: none !important;
   border: none !important;
   border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent) !important;
-  margin-block: 5px !important;
-  margin-inline: 10px !important;
+  margin-block: 6px !important;
+  margin-inline: 12px !important;
   padding: 0 !important;
   min-height: 0 !important;
 }
 
-/* ---- panel rows (the app menu, the extensions panel, everything with
-   .subviewbutton) get the same treatment as menu rows ---- */
+/* ---- panel rows (the app menu, the extensions panel: anything with
+   .subviewbutton) get the same treatment ---- */
 panel .subviewbutton,
 panel toolbarbutton.subviewbutton,
 #appMenu-popup toolbarbutton {
-  border-radius: 9px !important;
+  border-radius: 10px !important;
   transition: background-color var(--ctab-t-fast) ease-out !important;
 }
 panel .subviewbutton:hover:not([disabled="true"]),
 panel toolbarbutton.subviewbutton:hover:not([disabled="true"]) {
-  background-color: color-mix(in srgb, currentColor 12%, transparent) !important;
+  background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
 }
 panel toolbarseparator {
   border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent) !important;
-  margin-inline: 10px !important;
+  margin-inline: 12px !important;
+}
+
+/* ---- opening ----
+   Short on purpose. A menu is opened to be clicked, often before it has
+   finished appearing, so the entrance has to be over by the time the pointer
+   arrives: 130ms each, 10ms apart, everything in by ~230ms even on a long
+   right-click menu. The rows drop 5px rather than sliding in from the side -
+   a menu comes DOWN out of its anchor, and moving them sideways fights that.
+   Hidden items still count in nth-child, so a menu that hides half its rows
+   gets a slightly uneven cadence; at 10ms a step that is not visible. */
+menupopup > menuitem,
+menupopup > menu,
+menupopup > menuseparator,
+menupopup > menugroup,
+menupopup > menucaption {
+  animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph) backwards !important;
+}
+menupopup > :nth-child(1)  { animation-delay: 0ms !important; }
+menupopup > :nth-child(2)  { animation-delay: 10ms !important; }
+menupopup > :nth-child(3)  { animation-delay: 20ms !important; }
+menupopup > :nth-child(4)  { animation-delay: 30ms !important; }
+menupopup > :nth-child(5)  { animation-delay: 40ms !important; }
+menupopup > :nth-child(6)  { animation-delay: 50ms !important; }
+menupopup > :nth-child(7)  { animation-delay: 58ms !important; }
+menupopup > :nth-child(8)  { animation-delay: 66ms !important; }
+menupopup > :nth-child(9)  { animation-delay: 74ms !important; }
+menupopup > :nth-child(10) { animation-delay: 82ms !important; }
+menupopup > :nth-child(n + 11) { animation-delay: 90ms !important; }
+@keyframes ctab-menu-row {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* the app menu and the extension panels are built from panelviews, whose rows
+   are light DOM too - same entrance, same reasoning */
+panelview .panel-subview-body > * {
+  animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph) backwards !important;
+}
+panelview .panel-subview-body > :nth-child(1)  { animation-delay: 0ms !important; }
+panelview .panel-subview-body > :nth-child(2)  { animation-delay: 12ms !important; }
+panelview .panel-subview-body > :nth-child(3)  { animation-delay: 24ms !important; }
+panelview .panel-subview-body > :nth-child(4)  { animation-delay: 34ms !important; }
+panelview .panel-subview-body > :nth-child(5)  { animation-delay: 44ms !important; }
+panelview .panel-subview-body > :nth-child(6)  { animation-delay: 54ms !important; }
+panelview .panel-subview-body > :nth-child(n + 7) { animation-delay: 62ms !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  menupopup > menuitem,
+  menupopup > menu,
+  menupopup > menuseparator,
+  menupopup > menugroup,
+  menupopup > menucaption,
+  panelview .panel-subview-body > * {
+    animation: none !important;
+  }
 }
 
 /* =========================================================================
