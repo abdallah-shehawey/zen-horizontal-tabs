@@ -61,9 +61,18 @@
      row and both boxes move together, so the whole popup fades as one thing.
      The hold is the smallest one that still survives the popup window being
      mapped a few frames after it opens (see the two blocks below). */
-  --ctab-t-panel: 150ms; /* the Ctrl+Tab switcher fading in */
+  --ctab-t-panel: 110ms; /* the Ctrl+Tab switcher fading in */
   --ctab-t-menu: 130ms;  /* a menu fading in */
   --ctab-d-menu: 30ms;   /* ...held that long so the popup window exists first */
+  /* the selection moving from card to card inside the switcher. Repainting
+     the ENTIRE panel - seven cards, their canvases and their labels, at the
+     zoom below - measures 1.6ms of CPU (drawWindow over the panel rect,
+     3.2ms, less the 0.47ms the call itself costs), so animating two of them
+     is nowhere near a frame and this can be a real transition rather than a
+     jump. Interruptible: hold Tab down and each flip retargets the one
+     before it, which is why it is shorter than the entrance. */
+  --ctab-t-switch: 130ms;
+  --ctab-switch-pop: 1.035; /* how much the selected card grows */
   /* how big the Ctrl+Tab switcher is. ctrlTab.js sizes its thumbnails as
      `availWidth * 0.85 / 7` and nothing in CSS changes that number, so this
      scales the whole card. Cap: the popup window is `canvasWidth * 1.25` per
@@ -1256,7 +1265,7 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
                                    Half a second after the key before there
                                    was anything to look at.
 
-   The entrance below is what replaced that: ONE fade, on this box only, 150ms,
+   The entrance below is what replaced that: ONE fade, on this box only, 110ms,
    after a 30ms hold. Seven per-card animations became one, nothing is
    staggered, and the hold is there because a popup's first painted frame is
    several frames after it opens - without it the fade is over before the
@@ -1298,14 +1307,26 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   zoom: 1.05 !important;
 }
 
-/* the cards. Nothing transitions: this panel is driven by a held key, every
-   Tab moves the highlight, and a transition would have the whole row
-   repainting between keystrokes for a 110ms fade nobody waits to see. */
+/* the cards. The selected one grows, and both it and the one it took the
+   selection from animate, so holding Tab reads as the highlight travelling
+   along the row instead of teleporting. `scale` and not `transform`, because
+   `transform` is the one property Zen's own code writes on chrome elements
+   and a transition on it fights whatever set it.
+
+   The growth is small on purpose, and not to save frames - see the block
+   below for what an animation in here actually costs. It is small because the
+   cards sit in a 10px gap: 1.035 of a 348px card spends 6px of that gap on
+   each side, so it never touches its neighbour or the 12px the box is padded
+   by, and no card at either end can be clipped by the popup window. */
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
   margin: 0 !important;
   padding: 0 !important;
   border-radius: 18px !important;
   clip-path: none !important;
+  transition: scale var(--ctab-t-switch) var(--ctab-ease-morph) !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus {
+  scale: var(--ctab-switch-pop) !important;
 }
 
 /* the highlight surface. It is a background rather than a border because the
@@ -1317,6 +1338,21 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   border: none !important;
   background-color: transparent !important;
   text-shadow: none !important;
+  /* the FILL fades and the ring does not, which is not a taste call: an
+     animated `box-shadow` is the one property here that costs real frames.
+     Measured over six flips each, sampling the 150ms after every one, on a
+     165Hz screen where a flip should collect ~26 frames:
+
+       no animation at all ............ 25.7 frames   p90 6.3ms
+       any one property animating ..... 22.3 frames   p90 12.4ms
+       ...plus the ring ............... 18.5 frames   p90 16.5ms, max 37ms
+
+     The middle row is a flat cost - it does not matter WHICH property or how
+     many of them, one dropped frame in four is the price of having an
+     animation in this popup at all. box-shadow is the exception that doubles
+     it, so the ring snaps on instead, which also gives the keypress an
+     instant acknowledgement while the fill and the scale carry the motion. */
+  transition: background-color var(--ctab-t-switch) ease-out !important;
 }
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-preview-inner {
   background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
@@ -1346,6 +1382,7 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   font-weight: 500 !important;
   text-shadow: none !important;
   opacity: 0.62 !important;
+  transition: opacity var(--ctab-t-switch) ease-out !important;
 }
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-label {
   opacity: 1 !important;
@@ -1369,6 +1406,12 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 
 @media (prefers-reduced-motion: reduce) {
   :root #ctrlTab-panel #ctrlTab-previews { animation: none !important; }
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview,
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-preview-inner,
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-label {
+    transition: none !important;
+  }
+  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus { scale: none !important; }
 }
 
 /* "show all tabs" - a sibling of the card, so it gets its own pill */

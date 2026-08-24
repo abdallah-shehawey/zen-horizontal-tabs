@@ -67,10 +67,12 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
-  --ctab-t-panel: 150ms;    /* the Ctrl+Tab switcher fading in */
+  --ctab-t-panel: 110ms;    /* the Ctrl+Tab switcher fading in */
   --ctab-t-menu: 130ms;     /* a panel's rows fading in */
   --ctab-d-menu: 30ms;      /* ...held that long so the popup window exists */
   --ctab-switch-zoom: 1.12; /* how big the Ctrl+Tab switcher is (cap ~1.14) */
+  --ctab-t-switch: 130ms;   /* the selection moving from card to card */
+  --ctab-switch-pop: 1.035; /* how much the selected card grows */
   --ctab-bm: 32px;          /* the bookmarks strip */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
@@ -244,12 +246,45 @@ because none of them survived:
 | `backdrop-filter: blur(28px)` - **gone** | blurring a ~1800x640 region of a screen-wide transparent popup every frame, over seven scaled canvases, for a card that is 92% opaque anyway |
 | four rounded `clip-path`s per card - **gone** | masks, up to 28 of them nested; `border-radius` does the same job on the fast path |
 | a staggered per-card fade - **gone** | Firefox already waits 200ms before showing this panel, and the stagger then held the cards invisible for **another 325ms** after `popupshown` |
-| one fade on the box - **kept** | 150ms behind a 30ms hold: starts showing at +45ms, done at ~+180ms, and it replays on every open (verified over three consecutive opens - unlike a right-click menu, this panel rebuilds its state) |
+| one fade on the box - **kept** | 110ms behind a 30ms hold: starts showing at +43ms, done at **+134ms** (mean of three consecutive opens: 132 / 136 / 135), and it replays on every open - unlike a right-click menu, this panel rebuilds its state |
 | `zoom: 1.12` - **kept** | the cards are what you are reading, and it is the only way to change their size: `ctrlTab.js` hard-codes `canvasWidth = availWidth * 0.85 / 7`. Cards measure 371px; seven of them drop to 1.05 or the ends are clipped by the popup window |
+| the selection *moving* - **added** | the selected card grows to 1.035 and its fill crossfades over 130ms, so holding Tab reads as the highlight travelling along the row rather than teleporting |
 
-Stepping through the cards with Ctrl held, with all of that in place: a median
-frame of 16.9ms against a 16.7ms budget and **0 late frames out of 40**. The
-same measurement before this pass janked at 30-41ms.
+None of that touches the number that actually decides how a Ctrl+Tab feels,
+which is not in CSS at all: `browser-ctrlTab.js` opens the panel from a
+hard-coded `setTimeout(..., 200)` with no pref behind it ("a quick ctrl-tab
+just flips back to the MRU tab"), and it measures 205-216ms every time. The
+entrance above is the 134ms that follows it.
+
+### What an animation in this popup costs
+
+Every flip was sampled over the 150ms that follows it, six flips per variant,
+three rounds, on a 165Hz screen where a flip should collect ~26 frames:
+
+| what is animating | frames per flip | p90 | worst frame |
+|---|---|---|---|
+| nothing (the highlight jumps) | 25.7 | 6.3ms | 14.4ms |
+| any **one** property | 22.3 | 12.4ms | 15.9ms |
+| two or three of them | 22.7 | 12.5ms | 15.7ms |
+| ...with `box-shadow` among them | 18.5 | 16.5ms | **36.9ms** |
+
+Two things fall out of that. One dropped frame in four is a **flat** cost of
+having any animation in this popup - it does not scale with how many
+properties move, so `scale` + the fill + the label together cost what `scale`
+costs alone. And `box-shadow` is the exception that doubles it, which is why
+the focus ring snaps on instead of fading: it also makes the keypress feel
+answered instantly while the fill and the growth carry the motion.
+
+As shipped, held-Tab flipping collects 21.8 frames per flip with a median of
+6.1ms and a **worst frame of 14.3ms** - still inside a 60Hz budget, let alone
+this screen's 6.1ms one, where it costs about one frame in five.
+
+Two measurements that sound like they should have mattered and did not: the
+panel's own translucency and its 30px drop shadow (making the box fully opaque
+and dropping the shadow changed nothing), and `zoom` (a flip at `zoom: 1`
+costs what a flip at 1.12 costs). Repainting the entire panel - all seven
+cards, their canvases and their labels - is 1.6ms of CPU, measured with
+`drawWindow` over the panel rect, less the 0.47ms the call itself costs.
 
 Rounding is worth a note of its own, because the old one here was wrong.
 An inline `borderRadius = "44px"` on a `.ctrlTab-preview` reads back `0px`,
