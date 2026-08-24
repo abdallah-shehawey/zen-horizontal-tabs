@@ -72,11 +72,6 @@
                             "the panel must show up faster". */
   --ctab-t-menu: 130ms;  /* a menu fading in */
   --ctab-d-menu: 30ms;   /* ...held that long so the popup window exists first */
-  /* the red corner accents on the switcher card: a circle centred on each
-     corner, clipped by the card's own border-radius into a crescent that hugs
-     the curve. Purely static background layers - no animation, no mask. */
-  --ctab-corner-color: rgba(255, 59, 48, 0.92);
-  --ctab-corner-size: 30px;
   /* the selection moving from card to card inside the switcher. Repainting
      the ENTIRE panel - seven cards, their canvases and their labels, at the
      zoom below - measures 1.6ms of CPU (drawWindow over the panel rect,
@@ -1330,30 +1325,18 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   gap: 10px !important;
   padding: 12px !important;
   width: max-content !important;
-  margin: 0 auto !important;
   align-self: center !important;
   zoom: var(--ctab-switch-zoom) !important;
   animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph)
              var(--ctab-d-panel) backwards !important;
-  /* the four gradients are the red corner accents (the owner liked the rig's
-     corner markers and asked for them, 2026-08-25); the card's border-radius
-     clips each circle into a crescent tucked into its corner. They sit under
-     the inset ring and the cards, and cost nothing - static layers. */
-  background:
-    radial-gradient(circle var(--ctab-corner-size) at 0 0,
-      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
-    radial-gradient(circle var(--ctab-corner-size) at 100% 0,
-      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
-    radial-gradient(circle var(--ctab-corner-size) at 0 100%,
-      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
-    radial-gradient(circle var(--ctab-corner-size) at 100% 100%,
-      var(--ctab-corner-color) calc(var(--ctab-corner-size) - 2px), transparent) no-repeat,
-    var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
+  margin: 0 auto !important;
+  background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   border-radius: var(--psu-roundness-zoomed, 24px) !important;
   box-shadow:
     0 14px 30px -16px rgba(0, 0, 0, 0.55),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
 }
+
 @keyframes ctab-ctrltab-box {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: none; }
