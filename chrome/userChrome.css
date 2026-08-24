@@ -54,10 +54,22 @@
   --ctab-page-scale: 0.97;
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
-  /* The Ctrl+Tab switcher and the menus had entrance animations and a scale
-     of their own here. They are gone, and both blocks below carry the
-     measurement that removed them: they were costing about a third of a
-     second of "nothing is happening" on every open. */
+  /* Entrances for the two popups. These were once 200ms behind a 50ms hold
+     with a per-row stagger on top, which is how a 19-row menu took 310ms to
+     finish arriving and the switcher's cards took 325ms - so what they read
+     as was a hang, not an animation. Short, and NOTHING is staggered: every
+     row and both boxes move together, so the whole popup fades as one thing.
+     The hold is the smallest one that still survives the popup window being
+     mapped a few frames after it opens (see the two blocks below). */
+  --ctab-t-panel: 150ms; /* the Ctrl+Tab switcher fading in */
+  --ctab-t-menu: 130ms;  /* a menu fading in */
+  --ctab-d-menu: 30ms;   /* ...held that long so the popup window exists first */
+  /* how big the Ctrl+Tab switcher is. ctrlTab.js sizes its thumbnails as
+     `availWidth * 0.85 / 7` and nothing in CSS changes that number, so this
+     scales the whole card. Cap: the popup window is `canvasWidth * 1.25` per
+     tab (~389px) and a card plus its gap is ~341px, so past ~1.14 the row is
+     wider than the window it lives in and the ends are cut off. */
+  --ctab-switch-zoom: 1.12;
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
@@ -1103,33 +1115,48 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
  * So: a 1px transparent inset outline on #nav-bar whose colour cycles between
  * 0% and 0.4% black. It is invisible and it changes no layout.
  *
- * IT IS OFF, and this is the trade it lost. What it costs is not one style
- * sample - it is a wake-up and a composite of the whole window on EVERY frame
- * for as long as the window is focused, forever. This display runs at 165Hz.
- * That is 165 composites a second of a 2560x1440 window, bought so that a fade
- * would not be skipped, and it is exactly the kind of always-on work that
- * makes a browser feel heavy without ever pointing at a cause.
+ * It is ON, and the timing function is the whole trick. `steps(2)` instead of
+ * `linear`: the animation is still active and still sampled on every tick -
+ * which is all the clock needs - but its VALUE only changes twice per cycle,
+ * so there is nothing to repaint in between. Measured in a driven window,
+ * clock lag after 3.5s of complete quiet and paints during 1.5s of idle:
  *
- * Nothing else in this file needs it any more. The switcher and the menus do
- * not animate at all now (both blocks below carry the measurement), so the
- * only entrance it was still protecting was the floating address box - and a
- * box that appears instantly when the clock is stale is not worth a browser
- * that never sleeps.
+ *   nothing                       3491 ms lag    0 paints
+ *   linear   on #nav-bar             6 ms lag    3 paints
+ *   steps(2) on #nav-bar             2 ms lag    2 paints   <- this one
+ *   steps(2) on #PanelUI-menu-button 5 ms lag    1 paint
  *
- * To turn it back on: uncomment the two rules. The address box then fades
- * every time instead of most times, and the browser paints continuously.
+ * Worth correcting an earlier claim in this file: the linear version was NOT
+ * compositing the whole window every frame. That was inferred, never measured,
+ * and the measurement above says three paints in a second and a half. The real
+ * cost of either version is a refresh tick and one element's style sample per
+ * frame, and steps(2) is simply the cheaper of two cheap things.
  *
+ * It runs in every window, focused or not. It used to be guarded with
+ * `:not(:-moz-window-inactive)` and that guard is gone on purpose: a window is
+ * "inactive" more often than it looks - a driven window that has been focused
+ * and put fullscreen still reported `:-moz-window-inactive` as true - and a
+ * keeper that quietly stops is worse than useless, because what it leaves
+ * behind is exactly the "it animated once and never again" bug. At two paints
+ * per second and a half it is not worth guarding.
+ *
+ * It is off entirely under prefers-reduced-motion. Delete the rule to be rid of it -
+ * everything else keeps working, entrances just go back to being skipped
+ * whenever the browser has been quiet for a moment, which is exactly the
+ * "Ctrl+T does not animate any more after I open a new tab" complaint. */
 @keyframes ctab-clock {
   from { outline-color: rgba(0, 0, 0, 0); }
   50%  { outline-color: rgba(0, 0, 0, 0.004); }
   to   { outline-color: rgba(0, 0, 0, 0); }
 }
-#nav-bar:not(:-moz-window-inactive) {
+#nav-bar {
   outline: 1px solid transparent !important;
   outline-offset: -1px !important;
-  animation: ctab-clock 4s linear infinite !important;
+  animation: ctab-clock 4s steps(2) infinite !important;
 }
- */
+@media (prefers-reduced-motion: reduce) {
+  #nav-bar { animation: none !important; }
+}
 
 /* =========================================================================
  * Ctrl+Tab: the tab switcher
@@ -1210,32 +1237,36 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
    a short panel, and sits visibly below centre. Nothing in CSS moves a popup
    that JS has already placed.
 
-   No backdrop-filter, no zoom, no entrance. Those three are what made this
-   panel feel like the browser had stalled, and each one was measured:
+   No backdrop-filter, and no entrance that holds anything invisible. What
+   made this panel feel like the browser had stalled was measured, one thing
+   at a time:
 
      backdrop-filter: blur(28px)   blurring a ~1800x640 region of a
                                    screen-wide transparent popup on every
                                    frame, on top of seven scaled canvases,
-                                   for a card that is 92% opaque anyway
-     zoom: 1.12                    re-samples every thumbnail at paint time,
-                                   and puts the whole subtree in a scaled
-                                   coordinate space
-     the entrance                  the real one. Firefox already waits 200ms
+                                   for a card that is 92% opaque anyway.
+                                   GONE, and not coming back.
+     four rounded clip-paths       per card - see note 2. Masks, up to 28 of
+                                   them nested. GONE, border-radius does it.
+     a staggered per-card fade     the real one. Firefox already waits 200ms
                                    before it shows this panel at all (so that
                                    a quick Ctrl+Tab just flips back), and the
-                                   fade then held the cards invisible for
+                                   stagger then held the cards invisible for
                                    ANOTHER 325ms measured from popupshown.
                                    Half a second after the key before there
-                                   was anything to look at. Without it the
-                                   cards are on screen in the same frame the
-                                   popup maps: +0ms, measured the same way.
+                                   was anything to look at.
 
-   If you want the cards bigger and do not mind the resampling, put
-   `zoom: 1.12` back on this rule - but cap it: the popup window is
-   `canvasWidth * 1.25` per tab (~389px) while a card plus its gap is ~341px,
-   so past ~1.14 the row is wider than the window it lives in and the ends are
-   cut off, and at seven tabs the `availWidth * 0.99` cap leaves almost no
-   slack at all. */
+   The entrance below is what replaced that: ONE fade, on this box only, 150ms,
+   after a 30ms hold. Seven per-card animations became one, nothing is
+   staggered, and the hold is there because a popup's first painted frame is
+   several frames after it opens - without it the fade is over before the
+   window is on screen and you see nothing at all.
+
+   `zoom` is back too, because the cards are what you are reading. It is the
+   only way to change their size: ctrlTab.js hard-codes `canvasWidth =
+   availWidth * 0.85 / 7`. It resamples the thumbnails at paint time, which is
+   a cost paid per paint and not per frame - with the masks gone it no longer
+   shows. --ctab-switch-zoom carries the cap. */
 :root #ctrlTab-panel #ctrlTab-previews {
   display: flex !important;
   flex-direction: row !important;
@@ -1247,11 +1278,24 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   width: max-content !important;
   margin: 0 auto !important;
   align-self: center !important;
+  zoom: var(--ctab-switch-zoom) !important;
+  animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph)
+             var(--ctab-d-menu) backwards !important;
   background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   border-radius: var(--psu-roundness-zoomed, 24px) !important;
   box-shadow:
     0 14px 30px -16px rgba(0, 0, 0, 0.55),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+@keyframes ctab-ctrltab-box {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* seven cards already fill the frame `availWidth * 0.99` gives them, so they
+   get the smaller scale or the ends are clipped by the popup window */
+:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(7):not([hidden])) #ctrlTab-previews {
+  zoom: 1.05 !important;
 }
 
 /* the cards. Nothing transitions: this panel is driven by a held key, every
@@ -1321,6 +1365,10 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   border-radius: 10px !important;
   clip-path: none !important;
   box-shadow: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root #ctrlTab-panel #ctrlTab-previews { animation: none !important; }
 }
 
 /* "show all tabs" - a sibling of the card, so it gets its own pill */
@@ -1467,28 +1515,56 @@ panel toolbarseparator {
   margin-inline: 12px !important;
 }
 
-/* ---- opening: it does not, and that is deliberate ----
-   There WAS an entrance here - the rows fading in one after another, 200ms
-   each, 10ms apart, behind a 50ms hold that gave the popup window time to map.
-   It is gone, and the reason is a measurement rather than a change of taste.
+/* ---- opening ----
+   The app menu, the extension panels and anything else built on <panel> fade
+   their rows in on EVERY open. A right-click menu does not, and cannot, and
+   this is the measurement that settles it - it is not the refresh clock and it
+   is not the selector.
 
-   Because a popup frame cannot be animated (see above), the only thing that
-   can move is the rows, and rows fading in one at a time is precisely what
-   "the menu hangs while it fills up" looks like. Measured on a 19-row
-   right-click menu, from `popupshown`:
+   A `menupopup` keeps its layout after the first time it is opened. Measured
+   on both #tabContextMenu and #contentAreaContextMenu: open, close, and the
+   rows still report a real width (174px) with the popup shut, so their frames
+   were never destroyed. A CSS animation is created when an element starts
+   being rendered, so it is created ONCE - open #1 has `getAnimations().length
+   == 1` and opacity 0, opens #2..#5 have 0 animations and opacity 1. Nothing
+   restarts it, because nothing about those rows changes on the second open: a
+   MutationObserver over two full open/close cycles caught exactly one
+   attribute on the popup itself, `hasbeenopened="true"`, and it is sticky.
+   There is no per-open state in the DOM to key an animation on.
 
-     with the entrance   the last row was not fully visible until +310ms
-     without it          +0ms - the whole menu is there in the frame that
-                         maps it
+   A <panel> is the opposite: Gecko adds `animate` and `panelopen` on open and
+   removes both on close, and its rows genuinely re-animate - verified over
+   three consecutive opens of #appMenu-popup, `anims=1` and opacity ~0.01 each
+   time. So the rule below is scoped to panelviews only. An animation that runs
+   on the first right-click of a session and never again is worse than none:
+   that is precisely the "it only happens once" complaint.
 
-   A menu is opened to be clicked, usually before it has finished appearing,
-   so a third of a second of assembly is not decoration, it is latency. The
-   same run also caught the entrance failing to play at all on one open out of
-   three, which is the stale-refresh-clock problem in the block above - so what
-   was left was an animation that was either slow or absent.
+   (Keying it on `menupopup:hover` does re-arm it, and was rejected: hover goes
+   false the moment the pointer leaves the open menu and true again when it
+   comes back, so the rows would fade in a second time in the middle of using
+   it.)
 
-   The shape stays: rounded box, real padding, rounded rows, a hover that comes
-   from currentColor. Only the motion is gone. */
+   The 30ms hold is not padding: a popup's first painted frame lands several
+   frames after it opens, so without a hold the fade is over before the window
+   is on screen and nothing appears to animate. Do NOT copy that hold onto the
+   floating address box - that one is `popover=manual`, in-document, and has no
+   window to map.
+
+   Closing is not animated and cannot be: an `animation` on `menupopup` and one
+   on `menupopup::part(content)` both produce zero entries in
+   `getAnimations()`, and the popup is torn down synchronously anyway. */
+panelview .panel-subview-body > * {
+  animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph)
+             var(--ctab-d-menu) backwards !important;
+}
+@keyframes ctab-menu-row {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  panelview .panel-subview-body > * { animation: none !important; }
+}
 
 /* =========================================================================
  * The icons that never leave the address bar

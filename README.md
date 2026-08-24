@@ -67,6 +67,10 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
+  --ctab-t-panel: 150ms;    /* the Ctrl+Tab switcher fading in */
+  --ctab-t-menu: 130ms;     /* a panel's rows fading in */
+  --ctab-d-menu: 30ms;      /* ...held that long so the popup window exists */
+  --ctab-switch-zoom: 1.12; /* how big the Ctrl+Tab switcher is (cap ~1.14) */
   --ctab-bm: 32px;          /* the bookmarks strip */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
@@ -120,19 +124,30 @@ in a horizontal row they are a vertical hop: `margin-bottom` on tab open/close
 (the horizontal equivalent, the width transition, is already free) and a stray
 `transform: translateY()` on the pinned-tabs separator.
 
-Menus and panels are **shaped but not animated**: rounded inset row
-highlights, hairline separators pulled in from the edges, a 16px corner radius,
-real padding - and no motion at all. There was an entrance, and it was measured
-out again. A popup's own frame genuinely cannot be animated (an `animation` on
-`menupopup` and one on `menupopup::part(content)` both produce **zero** entries
-in `getAnimations()`), so the only thing that could move was the rows, and rows
-fading in one after another is exactly what "the menu hangs while it fills up"
-looks like. On a 19-row right-click menu, measured from `popupshown`: with the
-entrance the last row was not fully visible until **+310ms**; without it,
-**+0ms** - the whole menu is there in the frame that maps it. A menu is opened
-to be clicked, often before it has finished appearing, so that third of a
-second was not decoration, it was latency. Closing was never animated and
-cannot be: the popup is torn down synchronously.
+Menus and panels are shaped the same way and animate differently, and the
+difference is not a choice. A **`<panel>`** - the app menu behind the three
+dots, the extension panels - fades its rows in on every open: Gecko adds
+`animate` and `panelopen` when it opens and removes them when it closes, and
+its rows genuinely re-animate (verified over three consecutive opens of
+`#appMenu-popup`: one animation each time, opacity starting at ~0.01). A
+**right-click menu does not, and cannot.** A `menupopup` keeps its layout after
+the first time it is opened - measured on both `#tabContextMenu` and
+`#contentAreaContextMenu`, the rows still report a 174px width with the popup
+shut - so the CSS animation is created once, on open #1, and nothing restarts
+it: opens #2 to #5 have zero animations and opacity 1. There is nothing to key
+a restart on either; a MutationObserver over two full open/close cycles caught
+exactly one attribute on the popup, `hasbeenopened="true"`, and it is sticky.
+An entrance that plays on the first right-click of a session and never again is
+worse than none, so the rows there are left alone.
+
+What was there before was 200ms per row on a 10ms stagger behind a 50ms hold,
+which on a 19-row menu meant the last row was not fully visible until **+310ms**
+from `popupshown`, arriving one after another - "the menu hangs while it fills
+up". The panel entrance that replaced it is one 130ms fade with every row on
+the same clock, done at **+130ms**, measured. The 30ms hold in front of it is
+not padding: a popup's first painted frame lands several frames after it opens,
+and without the hold the fade is over before the window is on screen. Closing
+was never animated and cannot be: the popup is torn down synchronously.
 
 Shape reaches the box the same indirect way: `menupopup::part(content)` is not
 honoured from USER origin (a `padding: 21px` set that way left the part at
@@ -144,11 +159,10 @@ own OS-level window and both routes are closed from a user stylesheet:
 `panel::part(content)` is not honoured from USER origin (verified - an
 `outline` set that way never reached the element), and `-moz-window-transform`
 / `-moz-window-opacity` are not supported in this build. What a popup's
-*contents* do is another matter: Gecko throws away a popup's frames when it
-closes and builds them again when it opens, so an animation on something inside
-one replays on every open rather than only the first. That is what made an
-entrance possible at all - and both places that used one, the menus and the
-Ctrl+Tab switcher, have since had it removed for the latency it cost.
+*contents* do is another matter, but only for some of them: a `<panel>`
+re-animates its rows on every open, a `menupopup` keeps its frames and animates
+exactly once per session. Which is why the app menu fades in, the Ctrl+Tab
+switcher fades in, and the right-click menu simply appears.
 
 ### Why one pixel of `#nav-bar` used to be never still
 
@@ -177,17 +191,32 @@ complete quiet:
 | `background-color` on a 1px `::after` | 12 565 ms - XUL box, the pseudo never rendered |
 | **`outline-color` on a real 1px outline** | **26 ms** |
 
-That keep-alive is in the file, and it is **commented out**. What it costs is
-not one style sample: it is a wake-up and a composite of the whole window on
-every frame for as long as the window is focused, forever. This display runs at
-165Hz, so it is 165 composites a second of a 2560x1440 window bought so that a
-fade would not be skipped - the kind of always-on work that makes a browser
-feel heavy without ever pointing at a cause. Since the menus and the switcher
-no longer animate, the only entrance left to protect was the floating address
-box, and a box that sometimes appears instantly is the better trade.
+That keep-alive is in the file and it is **on**, with one change: the timing
+function is `steps(2)`, not `linear`. The animation is still active and still
+sampled on every tick - which is all the clock needs - but its value only
+changes twice per cycle, so there is nothing to repaint in between. Measured in
+a driven window: clock lag after 3.5s of complete quiet, and paints during 1.5s
+of idle.
 
-Uncomment the `ctab-clock` rule to get it back: the address box then fades
-every time instead of most times, and the browser paints continuously.
+| keeper | clock lag | paints while idle |
+|---|---|---|
+| none | 3491 ms | 0 |
+| `linear` on `#nav-bar` | 6 ms | 3 |
+| **`steps(2)` on `#nav-bar`** | **2 ms** | **2** |
+| `steps(2)` on the app-menu button | 5 ms | 1 |
+
+An earlier version of this README claimed the linear keeper was compositing the
+whole window every frame. That was inferred, never measured, and the table says
+otherwise - three paints in a second and a half. The real cost of either is a
+refresh tick and one element's style sample per frame.
+
+It runs in every window now, focused or not: the old
+`:not(:-moz-window-inactive)` guard is gone, because a window is "inactive"
+more often than it looks - a driven window that had been focused and put
+fullscreen still matched it - and a keeper that quietly stops leaves exactly
+the "it animated once and never again" bug behind. Verified with it on: three
+consecutive Ctrl+T boxes and three consecutive Ctrl+Tab panels, clock lag never
+above 17ms, every one of them animating.
 
 ### The Ctrl+Tab switcher
 
@@ -210,15 +239,17 @@ from a top computed for a short panel, and sits visibly below centre.
 Three things were tried here and measured back out, and the panel is fast
 because none of them survived:
 
-| removed | why |
+| what went, what stayed | why |
 |---|---|
-| `backdrop-filter: blur(28px)` | blurring a ~1800x640 region of a screen-wide transparent popup every frame, over seven scaled canvases, for a card that is 92% opaque anyway |
-| `zoom: 1.12` | resamples every thumbnail at paint time and puts the subtree in a scaled coordinate space |
-| the entrance | Firefox already waits 200ms before showing this panel; the fade then held the cards invisible for **another 325ms** after `popupshown`. Without it: **+0ms** |
+| `backdrop-filter: blur(28px)` - **gone** | blurring a ~1800x640 region of a screen-wide transparent popup every frame, over seven scaled canvases, for a card that is 92% opaque anyway |
+| four rounded `clip-path`s per card - **gone** | masks, up to 28 of them nested; `border-radius` does the same job on the fast path |
+| a staggered per-card fade - **gone** | Firefox already waits 200ms before showing this panel, and the stagger then held the cards invisible for **another 325ms** after `popupshown` |
+| one fade on the box - **kept** | 150ms behind a 30ms hold: starts showing at +45ms, done at ~+180ms, and it replays on every open (verified over three consecutive opens - unlike a right-click menu, this panel rebuilds its state) |
+| `zoom: 1.12` - **kept** | the cards are what you are reading, and it is the only way to change their size: `ctrlTab.js` hard-codes `canvasWidth = availWidth * 0.85 / 7`. Cards measure 371px; seven of them drop to 1.05 or the ends are clipped by the popup window |
 
-Stepping through the cards with Ctrl held went from a **17.0ms** median frame
-to **8.8ms** across those changes, and to **6.1ms** - a full 165Hz - in the
-shipped file.
+Stepping through the cards with Ctrl held, with all of that in place: a median
+frame of 16.9ms against a 16.7ms budget and **0 late frames out of 40**. The
+same measurement before this pass janked at 30-41ms.
 
 Rounding is worth a note of its own, because the old one here was wrong.
 An inline `borderRadius = "44px"` on a `.ctrlTab-preview` reads back `0px`,
@@ -244,10 +275,11 @@ and the square corners came from. Every value here outranks those selectors and
 passes through `var(--psu-..., fallback)`, so the mod still wins whenever it
 does resolve.
 
-Want the cards bigger? Put `zoom: 1.12` back on `#ctrlTab-previews` and accept
-the resampling - but cap it there: the popup window is `canvasWidth * 1.25` per
-tab (~389px) while a card plus its gap is ~341px, so past ~1.14 the row is
-wider than the window it lives in and the ends are cut off.
+`--ctab-switch-zoom` is the size knob, and ~1.14 is its ceiling: the popup
+window is `canvasWidth * 1.25` per tab (~389px) while a card plus its gap is
+~341px, so past that the row is wider than the window it lives in and the ends
+are cut off. Seven cards hit the `availWidth * 0.99` cap instead and drop to
+1.05 on their own.
 
 ## The bookmarks strip, and two icons
 
