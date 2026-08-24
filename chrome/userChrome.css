@@ -43,6 +43,12 @@
   --ctab-t-tab: 190ms;   /* a tab arriving or leaving the strip */
   --ctab-t-morph: 260ms; /* a tab trading places with another */
   --ctab-t-page: 220ms;  /* the PAGE crossing over on a tab switch */
+  /* How far the page compresses on its way out, and the size the arriving one
+     opens from. 0.97 of 1540x604 is 46px of width and 18px of height - enough
+     to read as the page closing into itself, small enough that the browser
+     background only shows for the moment the two are both mid-fade.
+     Set it to 1 to get a plain crossfade with no compression at all. */
+  --ctab-page-scale: 0.97;
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
@@ -1094,14 +1100,35 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
    on its overlay and marks BOTH it and the page behind it `deck-selected`
    (ZenGlanceManager, ~line 1275), and it animates them itself. Neither gets
    the z-index either, so their own stacking is untouched. */
+/* Why a transition and not an entrance animation. Only the arriving panel
+   gets a class added (`deck-selected`), so an @keyframes on it can only ever
+   animate one end of the switch - the page being left would still vanish on
+   the first frame, which is the same fault the strip had before flex-basis
+   went into its transition list. A transition runs in BOTH directions off the
+   same declaration: the panel losing `deck-selected` compresses and fades out
+   while the one gaining it expands and fades in, on one curve, at one time.
+   That works here only because a panel is never hidden by CSS - see above -
+   so the one being left is still a live, styleable, painting box for the
+   whole 220ms. */
+#tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
+  > .browserSidebarContainer {
+  transition:
+    transform var(--ctab-t-page) var(--ctab-ease-morph),
+    opacity var(--ctab-t-page) var(--ctab-ease-morph) !important;
+}
+#tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
+  > .browserSidebarContainer:not(.deck-selected) {
+  transform: scale(var(--ctab-page-scale)) !important;
+  opacity: 0 !important;
+}
 #tabbrowser-tabpanels:not([zen-split-view="true"]):not(:has(> .zen-glance-overlay))
   > .browserSidebarContainer.deck-selected {
+  /* z-index is not transitioned, so it changes hands on the first frame: the
+     arriving page is on top for the whole switch and the one being left
+     compresses away underneath it, whichever order they sit in the DOM. */
   z-index: 1 !important;
-  animation: ctab-page-in var(--ctab-t-page) var(--ctab-ease-morph) !important;
-}
-@keyframes ctab-page-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  transform: none !important;
+  opacity: 1 !important;
 }
 
 /* ---- one switch for all of it ----
@@ -1120,8 +1147,10 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   }
   /* the label is transitioned now, not animated; the X on a hovered chip is
      the only keyframe animation left in the strip */
-  .tabbrowser-tab .tab-close-button,
-  #tabbrowser-tabpanels > .browserSidebarContainer.deck-selected {
+  .tabbrowser-tab .tab-close-button {
     animation: none !important;
+  }
+  #tabbrowser-tabpanels > .browserSidebarContainer {
+    transition: none !important;
   }
 }
