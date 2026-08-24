@@ -167,15 +167,42 @@ whenever the browser has been quiet for a moment.
 
 ### The Ctrl+Tab switcher
 
-Only exists if `browser.ctrlTab.sortByRecentlyUsed` is on. The panel is
-Firefox's, and this file gives it the same dark card treatment as the floating
-address box: the thumbnails get the depth, the selected card gets a ring in
-Zen's accent colour and lifts instead of being outlined in `#45a1ff`, the
-favicon badge stops being a white square, and the cards fan in on a 200ms
-stagger. If the **Better CtrlTab Panel** mod is installed it keeps owning the
-panel's size, padding and zoom - every colour here falls back to that mod's own
-variables and only supplies a value for when they resolve to nothing, which is
-what leaves the panel a flat grey sheet in an otherwise dark browser.
+Only exists if `browser.ctrlTab.sortByRecentlyUsed` is on. Firefox lays it out
+as **one screen-wide ribbon**, and that is structural rather than a style
+choice - `browser-ctrlTab.js` writes an inline `panel.style.width` of
+`canvasWidth * 1.25 * tabCount` (with `canvasWidth` always `availWidth * 0.85 / 7`)
+and then positions the popup from that same number, so ~2530px on a 2560px
+screen. Overriding the width from CSS would leave the popup anchored where a
+2530px box was meant to start, i.e. against the left edge.
+
+So the popup frame is made **invisible** and `#ctrlTab-previews` becomes the
+visible card, centred inside it: a dark rounded panel laid out as a grid - two
+across for four tabs, three for five or six, four for seven - with the frame
+staying screen-wide behind it where nobody can see it. Columns are `max-content`
+because the thumbnails are bitmaps `ctrlTab.js` has already sized; stretching
+them to fractions would resample every one.
+
+Two things worth knowing before editing that section:
+
+- **`border-radius` is silently dropped on anything inside a `.ctrlTab-preview`
+  button.** Verified by inline style in a driven profile: `44px` on the card,
+  the inner box, the canvas wrapper and the `<canvas>` all read back `0px`,
+  while `background`, `padding` and `display` set the same way all applied -
+  and `#ctrlTab-previews`, one level up, takes `44px` happily. Rounding there
+  is done with `clip-path: inset(0 round Npx)`, which is honoured everywhere.
+- **A clip-path clips the box-shadow too**, so a ring on a rounded card has to
+  be painted inside it. The selected card is a filled background plus an
+  `inset` ring, not an outline.
+
+If the **Better CtrlTab Panel** mod is installed, most of what it declares is
+dead: its palette and metrics sit in a commented-out block and it expects Zen
+to inject the pref values, so `var(--psu-better_ctrltab-*)` resolves to nothing
+- and an unresolvable var does not mean "ignored", it means the whole
+declaration computes to the initial value. Its rules win on specificity and
+then evaluate to zero, which is where the flat grey sheet, the missing padding
+and the square corners came from. Every value here outranks those selectors and
+passes through `var(--psu-..., fallback)`, so the mod still wins whenever it
+does resolve.
 
 ## Private windows
 

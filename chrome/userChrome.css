@@ -1068,112 +1068,182 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
  * Ctrl+Tab: the tab switcher
  * =========================================================================
  * This panel is Firefox's, not Zen's (#ctrlTab-panel, ctrlTab.css), and it
- * only exists when browser.ctrlTab.sortByRecentlyUsed is on. It is a XUL
- * popup, so the panel itself cannot be animated from here for the reasons in
- * "Everything else that moves" below - but its CONTENTS can, and better than
- * anywhere else in this file: Gecko destroys a popup's frames when it closes
- * and builds them again when it opens, so an animation on a preview replays on
- * every single open instead of only the first one.
+ * only exists when browser.ctrlTab.sortByRecentlyUsed is on. Three things
+ * about it are not obvious, and all three shape everything below.
  *
- * The profile this was written against also has the "Better CtrlTab Panel"
- * mod (chrome/zen-themes/), which owns the panel's size, padding and zoom.
- * Nothing here fights that. The one thing it does take over is the colour:
- * the mod picks its palette with light-dark(), the chrome resolves that to
- * LIGHT, and the result is a flat grey slab in the middle of a dark browser.
- * Forcing the panel's own color-scheme to dark makes the mod's own dark
- * palette apply, so its settings still work - they just resolve to the half of
- * light-dark() that matches the rest of the window. */
+ * 1. The panel is a screen-wide strip BY CONSTRUCTION, and it cannot simply be
+ *    made narrower. browser-ctrlTab.js `_openPanel()` does:
+ *
+ *      canvasWidth = ceil(screen.availWidth * 0.85 / 7)   // always /7
+ *      width = min(availWidth * 0.99, canvasWidth * 1.25 * tabPreviewCount)
+ *      panel.style.width = width + "px"
+ *      panel.openPopupAtScreen(availLeft + (availWidth - width) / 2, ...)
+ *
+ *    so with seven tabs on a 2560px screen it writes an INLINE width of about
+ *    2530px and then positions the popup from that same number. Overriding the
+ *    width from CSS leaves the popup anchored where a 2530px box would have
+ *    started - i.e. hard against the left edge. So the popup frame is made
+ *    invisible instead, and #ctrlTab-previews becomes the visible card,
+ *    centred inside it. The frame stays screen-wide and nobody can tell.
+ *
+ * 2. `border-radius` is silently dropped on everything inside a
+ *    .ctrlTab-preview button. Verified in a driven profile: an INLINE
+ *    `borderRadius = "44px"` on .ctrlTab-preview, .ctrlTab-preview-inner,
+ *    .ctrlTab-canvas and the <canvas> all read back `0px`, while `background`,
+ *    `padding` and `display` set the same way all took - and #ctrlTab-previews,
+ *    one level up, accepts 44px happily. `clip-path: inset(0 round Npx)` IS
+ *    honoured on all of them, so that is what rounds the cards.
+ *
+ *    That has a consequence worth stating: a clip-path clips the box-shadow
+ *    too. Any ring or glow on a rounded card has to be painted INSIDE it -
+ *    hence the focus ring is an `inset` shadow on the inner box, not an
+ *    outline around the card.
+ *
+ * 3. If the "Better CtrlTab Panel" mod is installed (chrome/zen-themes/,
+ *    prefs psu.better_ctrltab.*), most of what it declares is dead: its
+ *    palette and metrics live in a commented-out /** ... /**\/ block and it
+ *    expects Zen to inject the pref values, so `var(--psu-better_ctrltab-*)`
+ *    resolves to nothing - and an unresolvable var makes the whole declaration
+ *    invalid at computed-value time, which is not "ignored", it is "computes
+ *    to the initial value". That is where the flat grey sheet, the zero
+ *    padding and the square corners came from: its rules WIN on specificity
+ *    and then evaluate to nothing. Everything here therefore does two things -
+ *    it outranks those selectors, and it passes each value through
+ *    `var(--psu-..., fallback)` so the mod still wins whenever it does
+ *    resolve. */
 :root #ctrlTab-panel {
   color-scheme: dark !important;
-  /* Every value here defers to the mod and only supplies a floor for when it
-     is not installed. That is not politeness, it is the actual bug: the mod
-     declares its palette inside a commented-out block and expects Zen to
-     inject the pref values at runtime, so `var(--psu-better_ctrltab-background)`
-     can resolve to nothing at all - and a custom property that resolves to
-     nothing makes the whole declaration invalid, which drops the panel back to
-     Firefox's own hsla(0, 0%, 40%, 0.85). A flat mid-grey sheet is what that
-     is. With a fallback the panel is dark whether the mod answers or not, and
-     if it does answer, color-scheme above picks the dark half of its
-     light-dark() pair instead of the light one. */
-  --panel-background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.9)) !important;
-  --panel-background-color: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.9)) !important;
-  --panel-border-radius: var(--psu-roundness-zoomed, 20px) !important;
-  --panel-border-color: color-mix(in srgb, currentColor 12%, transparent) !important;
-  --panel-shadow: 0 32px 64px -18px rgba(0, 0, 0, 0.62),
-                  0 8px 24px -10px rgba(0, 0, 0, 0.45) !important;
+  /* the frame is only a positioner now */
+  --panel-background: transparent !important;
+  --panel-background-color: transparent !important;
+  --panel-border-color: transparent !important;
+  --panel-shadow: none !important;
+  --panel-padding: 0 !important;
   --panel-color: rgba(255, 255, 255, 0.92) !important;
-}
-
-/* the cards. The thumbnail is the content, so it gets the border and the
-   depth, and the frame around it stays quiet until it is the one selected. */
-:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-canvas {
-  border-radius: 12px !important;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 10px 24px -12px rgba(0, 0, 0, 0.6) !important;
-}
-:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-preview-inner {
-  border: none !important;
-  border-radius: 16px !important;
-  background: transparent !important;
-  transition:
-    background var(--ctab-t-fast) ease-out,
-    box-shadow var(--ctab-t-fast) ease-out !important;
-}
-
-/* the selected card. Firefox's own answer is a 2px #45a1ff border, which is
-   the one colour in the panel that belongs to no theme; this is a ring in
-   Zen's accent plus a lift, so the selection reads as the card coming forward
-   rather than as a box being drawn around it. Holding Ctrl and tabbing steps
-   through them, so the transition has to be short enough to keep up with a
-   key repeat: --ctab-t-fast is 110ms. */
-:root #ctrlTab-panel .ctrlTab-preview:focus .ctrlTab-preview-inner {
-  background: color-mix(in srgb, currentColor 12%, transparent) !important;
-  box-shadow:
-    0 0 0 1.5px color-mix(in srgb, var(--zen-primary-color, #7aa2ff) 70%, transparent),
-    0 12px 28px -14px rgba(0, 0, 0, 0.55) !important;
+  background-color: transparent !important;
   border: none !important;
 }
-:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-canvas,
-:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-label {
+
+/* THE card: dark, rounded, centred in a frame far wider than itself, and laid
+   out as a grid so seven tabs are a block instead of a 2500px ribbon. The
+   columns are `max-content` on purpose - the thumbnails are bitmaps whose size
+   ctrlTab.js already chose, so stretching them to fractions would resample
+   every one of them. */
+:root #ctrlTab-panel #ctrlTab-previews {
+  display: grid !important;
+  grid-template-columns: repeat(3, max-content) !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  padding: 18px !important;
+  width: max-content !important;
+  max-width: 92% !important;
+  margin: 0 auto !important;
+  align-self: center !important;
+  zoom: var(--psu-better_ctrltab-zoom, 1) !important;
+  background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
+  border-radius: var(--psu-roundness-zoomed, 24px) !important;
+  box-shadow:
+    0 32px 64px -18px rgba(0, 0, 0, 0.62),
+    0 8px 24px -10px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(28px) saturate(140%) !important;
+}
+
+/* How many across. Firefox never shows more than seven (maxTabPreviews: 7) and
+   hides the unused previews from the END, so "is the Nth one still visible"
+   is a straight count. Four is deliberately the widest row: past that the
+   block is a ribbon again. */
+:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(4):not([hidden])) #ctrlTab-previews {
+  grid-template-columns: repeat(2, max-content) !important;   /* 4 -> a square */
+}
+:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(5):not([hidden])) #ctrlTab-previews {
+  grid-template-columns: repeat(3, max-content) !important;   /* 5, 6 */
+}
+:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(7):not([hidden])) #ctrlTab-previews {
+  grid-template-columns: repeat(4, max-content) !important;   /* 7 */
+}
+
+/* the cards */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
+  margin: 0 !important;
+  padding: 0 !important;
+  clip-path: inset(0 round 18px) !important;
   transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
 }
-:root #ctrlTab-panel .ctrlTab-preview:focus .ctrlTab-canvas {
-  transform: translateY(-3px) !important;
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus {
+  transform: translateY(-4px) !important;
 }
 
-/* the title. Firefox draws it in bold with two text-shadows because the panel
+/* the highlight surface. It is a background rather than a border because the
+   card's clip-path is what rounds it - see note 2 above. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-preview-inner {
+  margin: 0 !important;
+  padding: 10px !important;
+  border: none !important;
+  background-color: transparent !important;
+  text-shadow: none !important;
+  transition:
+    background-color var(--ctab-t-fast) ease-out,
+    box-shadow var(--ctab-t-fast) ease-out !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-preview-inner {
+  background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
+  box-shadow: inset 0 0 0 1.5px
+    color-mix(in srgb, var(--zen-primary-color, #7aa2ff) 70%, transparent) !important;
+}
+
+/* the thumbnail */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas {
+  margin: 0 0 8px 0 !important;
+  box-shadow: none !important;
+  clip-path: inset(0 round 12px) !important;
+}
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas > canvas,
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas > img {
+  clip-path: inset(0 round 12px) !important;
+}
+
+/* the title. Firefox draws it bold with two text-shadows because the panel
    used to be a translucent grey sheet over the page and the text had to
-   survive whatever was behind it; on an opaque dark panel that reads as a
-   halo. */
-:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-label {
+   survive whatever was behind it; on a dark card that reads as a halo. */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-label {
+  margin: 0 !important;
+  padding: 0 2px !important;
   font-weight: 500 !important;
   text-shadow: none !important;
   opacity: 0.62 !important;
   transition: opacity var(--ctab-t-fast) ease-out !important;
 }
-:root #ctrlTab-panel .ctrlTab-preview:focus .ctrlTab-label {
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-label {
   opacity: 1 !important;
-  transform: translateY(-3px) !important;
 }
 
-/* the favicon badge. The default is a white #f9f9fa square, which is a hole in
-   a dark panel; this is the same badge, dark, with a hairline and a shadow so
-   it sits ON the thumbnail instead of in it. */
-:root #ctrlTab-panel .ctrlTab-preview .ctrlTab-favicon[src] {
+/* the favicon badge, sitting ON the bottom-right of the thumbnail instead of
+   being a white #f9f9fa square punched into a dark card */
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-favicon[src] {
+  position: static !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  padding: 5px !important;
+  margin: -42px 6px 0 0 !important;
   background-color: rgba(24, 24, 28, 0.92) !important;
-  border-radius: 10px !important;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-    0 6px 14px -6px rgba(0, 0, 0, 0.7) !important;
+  clip-path: inset(0 round 10px) !important;
+  box-shadow: none !important;
 }
 
-/* "show all tabs" becomes a pill instead of a grey bar */
+/* "show all tabs" - a sibling of the card, so it gets its own pill */
+:root #ctrlTab-panel #ctrlTab-showAll-container {
+  justify-content: center !important;
+  margin: 10px auto 0 !important;
+}
 :root #ctrlTab-panel #ctrlTab-showAll {
   border: none !important;
   border-radius: 999px !important;
+  clip-path: inset(0 round 999px) !important;
   padding: 6px 16px !important;
-  background-color: color-mix(in srgb, currentColor 10%, transparent) !important;
+  background-color: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   text-shadow: none !important;
   transition: background-color var(--ctab-t-fast) ease-out !important;
 }
@@ -1182,12 +1252,12 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   background-color: color-mix(in srgb, currentColor 20%, transparent) !important;
 }
 
-/* the entrance. Same curve and the same reasoning as the floating address box
-   above: the cards carry the movement, the panel carries the fade, and the
-   stagger is short because this panel is opened WHILE a key is held - by the
-   time the second Tab lands the entrance has to be finished and out of the
-   way. Cards, not rows, so the stagger is bigger per step and there are never
-   many of them. */
+/* the entrance. Same curve as the floating address box, and it replays on
+   every open rather than only the first: Gecko throws away a popup's frames
+   when it closes and builds them again when it opens. The stagger is short
+   because this panel is opened WHILE a key is held - by the time the second
+   Tab lands the entrance has to be finished and out of the way. It reads down
+   the grid in DOM order, which is the order Tab walks them in. */
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
   animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
 }
@@ -1202,11 +1272,19 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   55%  { opacity: 1; }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+:root #ctrlTab-panel #ctrlTab-previews {
+  animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
+}
+@keyframes ctab-ctrltab-box {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
 :root #ctrlTab-panel #ctrlTab-showAll-container {
   animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) 96ms backwards !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root #ctrlTab-panel #ctrlTab-previews,
   :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview,
   :root #ctrlTab-panel #ctrlTab-showAll-container {
     animation: none !important;
