@@ -31,3 +31,8 @@ user_pref("toolkit.cosmeticAnimations.enabled", true);
 // the pref the toggle writes, and without forcing it the browser comes back
 // in that state after a restart.
 user_pref("zen.view.compact.enable-at-startup", false);
+
+// Zen hides the "+" after the last tab unless this is on: vertical-tabs.css
+// wraps #tabs-newtab-button in @media -moz-pref("zen.tabs.show-newtab-vertical")
+// and ships it display:none otherwise.
+user_pref("zen.tabs.show-newtab-vertical", true);

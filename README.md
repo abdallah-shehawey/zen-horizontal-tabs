@@ -14,6 +14,9 @@ vertical sidebar. Tested on Zen 1.21.15b (Linux).
 * hovering a chip opens a **120px preview** with the page title and an X
 * the current tab is a **220px pill** with its title
 * the address box is 280px, the address is centred, domain only
+* a **"+"** sits after the last tab
+* Ctrl+T's floating search box **fades and scales in**, its results fan in behind it
+* a **private window is violet**, not the same black as a normal one
 * window buttons, app menu, downloads all keep working
 
 ## Install
@@ -50,6 +53,8 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-tab-h: 26px;    /* height of a tab */
   --ctab-right: 158px;   /* space kept for app menu + window buttons */
   --ctab-url: 280px;     /* width of the address box */
+  --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
+  --ctab-private: 128, 116, 255;  /* the private-window accent, as R, G, B */
 }
 ```
 
@@ -67,6 +72,7 @@ Edit, save, restart Zen.
 | `browser.tabs.insertRelatedAfterCurrent=true` | a link opens next to the page it came from |
 | `browser.tabs.insertAfterCurrent=false` | Ctrl+T goes to the end of the strip |
 | `zen.view.show-newtab-button-top=false` | new tabs at the end, not before the pinned ones |
+| `zen.tabs.show-newtab-vertical=true` | reveals the "+" after the last tab - Zen ships it `display:none` |
 | `zen.view.compact.enable-at-startup=false` | compact mode stays off (see below) |
 | `toolkit.cosmeticAnimations.enabled=true` | tabs slide open and closed |
 
@@ -78,6 +84,24 @@ opens that page in a tab. There is no third setting - `browser.startup.page`,
 `browser.startup.homepage=about:newtab` and `zen.urlbar.open-on-startup` were
 all tested and none of them changes it. Two alternatives sit commented out at
 the top of `user.js`.
+
+## Private windows
+
+Zen tints a private window with `--zen-primary-color: rgb(11, 10, 11)`
+(`zen-theme.css`). On a dark theme that is the same black as a normal window,
+so the two are indistinguishable. `--ctab-private` at the top of the CSS paints
+the window background, the address pill, the tab chips and a hairline above the
+page, and both `[zen-private-window="true"]` (Zen's) and
+`[privatebrowsingmode="temporary"]` (Firefox's) are matched.
+
+The **tabs** in a private window used to be missing entirely. A private window
+builds its space during init, before `#tabbrowser-tabs` is stamped horizontal,
+so `tabs.js` propagates `orient="horizontal"` down to `.workspace-arrowscrollbox`
+- a normal window restores its space from the session store afterwards and keeps
+the template's `orient="vertical"`. The sideways `writing-mode: vertical-lr`
+that makes the vertical strip run horizontally then turned that already-horizontal
+row into a column, and every tab landed one full row *below* the toolbar. The
+rule is now scoped to `[orient="vertical"]`.
 
 ## Compact mode is off
 
