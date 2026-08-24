@@ -69,7 +69,9 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
   --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
   --ctab-switch-zoom: 1.3;  /* how big the Ctrl+Tab switcher is */
-  --ctab-t-menu: 130ms;     /* a menu's rows arriving */
+  --ctab-t-menu: 200ms;     /* a menu's rows arriving */
+  --ctab-d-menu: 50ms;      /* ...held until the popup window is mapped */
+  --ctab-bm: 32px;          /* the bookmarks strip */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
 ```
@@ -220,6 +222,37 @@ then evaluate to zero, which is where the flat grey sheet, the missing padding
 and the square corners came from. Every value here outranks those selectors and
 passes through `var(--psu-..., fallback)`, so the mod still wins whenever it
 does resolve.
+
+## The bookmarks strip, and two icons
+
+The strip shows on the new tab page only, which is Firefox's own
+`browser.toolbars.bookmarks.visibility = "newtab"`. That pref was already set
+in the profile and did nothing, because this file used to carry a flat
+`#PersonalToolbar { display: none }` that overrode it - it had to, since Zen
+does not keep the strip in `#navigator-toolbox` at all. It lives in
+`#zen-appcontent-navbar-container`, which this file pins `position: fixed`
+top-right **because the window buttons share that same box**, so the strip was
+trapped in a 36px corner. It is now pulled out into a full-width bar of its own
+under the toolbar row, and the page is moved down to meet it.
+
+That move has to be a `margin` on `#tabbrowser-tabpanels`, not padding: the
+panels inside the deck are `position: absolute; inset: 0`, and an absolute
+child resolves `top: 0` against its containing block's **padding box**, so
+padding moves nothing. Measured with padding: the page still began at y=42 with
+the strip sitting on top of it. With margin: y=74, exactly the strip's height
+below the row.
+
+Two icons in the address bar behave differently and only one of them is stuck.
+The prompts' anchors (save-password, camera, location) live in
+`#notification-popup-box` and already come and go with their prompt.
+`#identity-permission-box` is the **key** that stays for as long as a site
+holds any permission you have ever granted it - say yes to notifications once
+and it is on that site forever. That one is hidden here; what it stands for is
+still listed behind the padlock beside it. It is not moved to the right-hand
+side because every permission doorhanger anchors to it, and moving the anchor
+moves the arrow of every popup that points at it. The downloads button is not a
+CSS matter at all - `browser.download.autohideButton` in `user.js` is what
+makes it appear on the first download and leave again.
 
 ## Private windows
 

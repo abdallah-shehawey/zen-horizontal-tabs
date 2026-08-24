@@ -20,6 +20,7 @@
   --ctab-url: 280px;     /* width of the address box */
   --ctab-newtab: 26px;   /* width of the "+" that follows the last tab */
   --ctab-gap: 8px;       /* breathing room on each side of the address box */
+  --ctab-bm: 32px;       /* the bookmarks strip, on the pages that show it */
 
   /* motion. One curve and three durations for the whole file, so nothing in
      the row moves on a timing of its own. */
@@ -59,8 +60,9 @@
      scales the whole card - text and spacing are re-laid out at the new size
      and stay crisp, only the thumbnails are resampled, and they come from
      PageThumbs storage at a larger size than they are shown at. */
-  --ctab-switch-zoom: 1.3;
-  --ctab-t-menu: 130ms;  /* a menu's rows arriving */
+  --ctab-switch-zoom: 1.12;
+  --ctab-t-menu: 200ms; /* a menu's rows arriving */
+  --ctab-d-menu: 50ms;   /* ...after the popup window has had time to map */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
@@ -80,9 +82,12 @@
   width: calc(100% - var(--ctab-right)) !important;
   max-width: none !important;
   min-width: 0 !important;
-  height: var(--ctab-row) !important;
+  /* a MINIMUM, not a size: the bookmarks strip wraps onto a second line when
+     Firefox un-collapses it, and a fixed height would clip it */
+  flex-wrap: wrap !important;
+  height: auto !important;
   min-height: var(--ctab-row) !important;
-  max-height: var(--ctab-row) !important;
+  max-height: none !important;
   padding-inline: 4px 0 !important;
 }
 
@@ -865,7 +870,59 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   padding: 0 !important;
   opacity: 1 !important;
 }
-#PersonalToolbar { display: none !important; }
+/* The bookmarks strip. This file used to hide it outright, which quietly
+   overrode `browser.toolbars.bookmarks.visibility` - the pref was set to
+   "newtab" in the profile and had no effect, because the strip was display:none
+   whatever Firefox decided. Now Firefox decides: it collapses the strip on
+   every page except the new tab one, and all this does is give it a row of its
+   own to sit in.
+
+   The row it needs does not exist by default here: #navigator-toolbox was
+   turned into a single fixed-height row further up, so the strip was a flex
+   item competing with the tabs for that 36px. `flex-wrap` plus a full-width
+   basis pushes it onto a second line, and the toolbox height has to become
+   auto for that line to exist at all - which is why the height below is a
+   MINIMUM rather than a fixed size. */
+#PersonalToolbar:not([collapsed]) {
+  /* Zen does not keep this strip in #navigator-toolbox at all - it lives in
+     #zen-appcontent-navbar-container, which this file pins `position: fixed`
+     top-right because the WINDOW BUTTONS share that same box. Left there the
+     strip is trapped in a 36px box in the top-right corner, overlapping the
+     toolbar row. CSS cannot reparent it, so it is taken out of that box and
+     given a full-width bar of its own directly under the row; the window
+     buttons keep the fixed box to themselves, which is all it was for. */
+  position: fixed !important;
+  top: var(--ctab-row) !important;
+  inset-inline: 0 !important;
+  width: 100vw !important;
+  height: var(--ctab-bm) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  z-index: 9 !important;
+  padding-block: 0 !important;
+  padding-inline: 8px !important;
+  background: transparent !important;
+}
+/* and the page starts below it rather than under it. It has to be a MARGIN:
+   the panels inside the deck are `position: absolute; inset: 0` (see the note
+   on crossfading a tab switch) and an absolutely positioned child resolves
+   `top: 0` against its containing block's padding box - which includes the
+   padding - so padding on the deck moves nothing. Measured: with padding-top
+   the page still began at y=42 with the strip sitting on top of it. */
+#browser:has(#PersonalToolbar:not([collapsed])) #tabbrowser-tabpanels {
+  margin-top: var(--ctab-bm) !important;
+}
+/* Firefox writes `collapsed=""`, not `collapsed="true"` - match on the
+   attribute being PRESENT or the strip keeps a 4px sliver on every page */
+#PersonalToolbar[collapsed] { display: none !important; }
+#PersonalToolbar .bookmark-item {
+  border-radius: 8px !important;
+  padding: 3px 8px !important;
+  transition: background-color var(--ctab-t-fast) ease-out !important;
+}
+#PersonalToolbar .bookmark-item:hover {
+  background-color: color-mix(in srgb, currentColor 12%, transparent) !important;
+}
 .titlebar-buttonbox-container { height: var(--ctab-row) !important; align-items: center !important; opacity: 1 !important; }
 
 /* Zen dims this bar and drops its pointer events when it is not the active
@@ -1131,43 +1188,47 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   border: none !important;
 }
 
-/* THE card: dark, rounded, centred in a frame far wider than itself, and laid
-   out as a grid so seven tabs are a block instead of a 2500px ribbon. The
-   columns are `max-content` on purpose - the thumbnails are bitmaps whose size
-   ctrlTab.js already chose, so stretching them to fractions would resample
-   every one of them. */
+/* THE card: dark, rounded, centred in a frame far wider than itself.
+   ONE row, and that is not a style choice either. ctrlTab.js positions the
+   popup vertically at `(availHeight - (canvasHeight * 1.25 + 75)) / 2`, which
+   is the height of a SINGLE row of thumbnails - so the moment the cards wrap
+   the box is taller than the estimate, grows downward from a top computed for
+   a short panel, and sits visibly below centre. Nothing in CSS moves a popup
+   that JS has already placed. Same story sideways: `panel.style.width` is
+   written inline from the tab count and anything wider than it is clipped by
+   the popup window, which is what caps the scale below.
+
+   No backdrop-filter here. It was blurring a ~1800x640 region of a
+   screen-wide transparent popup on every frame, on top of seven scaled
+   canvases, and that is what made holding Ctrl feel like the browser had
+   stalled. The card is 92% opaque anyway - the blur was buying almost
+   nothing. */
 :root #ctrlTab-panel #ctrlTab-previews {
-  display: grid !important;
-  grid-template-columns: repeat(3, max-content) !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
   justify-content: center !important;
-  gap: 14px !important;
-  padding: 18px !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  padding: 12px !important;
   width: max-content !important;
-  max-width: 92% !important;
   margin: 0 auto !important;
   align-self: center !important;
   zoom: var(--ctab-switch-zoom) !important;
   background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   border-radius: var(--psu-roundness-zoomed, 24px) !important;
   box-shadow:
-    0 32px 64px -18px rgba(0, 0, 0, 0.62),
-    0 8px 24px -10px rgba(0, 0, 0, 0.45),
+    0 28px 56px -18px rgba(0, 0, 0, 0.6),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
-  backdrop-filter: blur(28px) saturate(140%) !important;
 }
 
-/* How many across. Firefox never shows more than seven (maxTabPreviews: 7) and
-   hides the unused previews from the END, so "is the Nth one still visible"
-   is a straight count. Four is deliberately the widest row: past that the
-   block is a ribbon again. */
-:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(4):not([hidden])) #ctrlTab-previews {
-  grid-template-columns: repeat(2, max-content) !important;   /* 4 -> a square */
-}
-:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(5):not([hidden])) #ctrlTab-previews {
-  grid-template-columns: repeat(3, max-content) !important;   /* 5, 6 */
-}
+/* How much bigger the card can get, which is a ceiling rather than a taste:
+   the popup window is `canvasWidth * 1.25` per tab (~389px) while a card plus
+   its gap is ~341px, so there is only ~14% of slack before the row is wider
+   than the window it lives in and the ends are cut off. Seven cards hit the
+   `availWidth * 0.99` cap instead and have almost none. */
 :root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(7):not([hidden])) #ctrlTab-previews {
-  grid-template-columns: repeat(4, max-content) !important;   /* 7 */
+  zoom: 1.05 !important;
 }
 
 /* the cards */
@@ -1268,23 +1329,22 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
   animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
 }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(1) { animation-delay: 0ms !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(2) { animation-delay: 26ms !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(3) { animation-delay: 48ms !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(4) { animation-delay: 66ms !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(5) { animation-delay: 80ms !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(n + 6) { animation-delay: 90ms !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(1) { animation-delay: calc(var(--ctab-d-menu) + 0ms) !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(2) { animation-delay: calc(var(--ctab-d-menu) + 26ms) !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(3) { animation-delay: calc(var(--ctab-d-menu) + 48ms) !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(4) { animation-delay: calc(var(--ctab-d-menu) + 66ms) !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(5) { animation-delay: calc(var(--ctab-d-menu) + 80ms) !important; }
+:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(n + 6) { animation-delay: calc(var(--ctab-d-menu) + 90ms) !important; }
 @keyframes ctab-ctrltab-card {
-  from { opacity: 0; transform: translateY(14px) scale(0.92); }
-  55%  { opacity: 1; }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 :root #ctrlTab-panel #ctrlTab-previews {
   animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
 }
 @keyframes ctab-ctrltab-box {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 :root #ctrlTab-panel #ctrlTab-showAll-container {
   animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) 96ms backwards !important;
@@ -1438,20 +1498,20 @@ menupopup > menugroup,
 menupopup > menucaption {
   animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph) backwards !important;
 }
-menupopup > :nth-child(1)  { animation-delay: 0ms !important; }
-menupopup > :nth-child(2)  { animation-delay: 10ms !important; }
-menupopup > :nth-child(3)  { animation-delay: 20ms !important; }
-menupopup > :nth-child(4)  { animation-delay: 30ms !important; }
-menupopup > :nth-child(5)  { animation-delay: 40ms !important; }
-menupopup > :nth-child(6)  { animation-delay: 50ms !important; }
-menupopup > :nth-child(7)  { animation-delay: 58ms !important; }
-menupopup > :nth-child(8)  { animation-delay: 66ms !important; }
-menupopup > :nth-child(9)  { animation-delay: 74ms !important; }
-menupopup > :nth-child(10) { animation-delay: 82ms !important; }
-menupopup > :nth-child(n + 11) { animation-delay: 90ms !important; }
+menupopup > :nth-child(1)  { animation-delay: calc(var(--ctab-d-menu) + 0ms) !important; }
+menupopup > :nth-child(2)  { animation-delay: calc(var(--ctab-d-menu) + 10ms) !important; }
+menupopup > :nth-child(3)  { animation-delay: calc(var(--ctab-d-menu) + 20ms) !important; }
+menupopup > :nth-child(4)  { animation-delay: calc(var(--ctab-d-menu) + 30ms) !important; }
+menupopup > :nth-child(5)  { animation-delay: calc(var(--ctab-d-menu) + 40ms) !important; }
+menupopup > :nth-child(6)  { animation-delay: calc(var(--ctab-d-menu) + 50ms) !important; }
+menupopup > :nth-child(7)  { animation-delay: calc(var(--ctab-d-menu) + 58ms) !important; }
+menupopup > :nth-child(8)  { animation-delay: calc(var(--ctab-d-menu) + 66ms) !important; }
+menupopup > :nth-child(9)  { animation-delay: calc(var(--ctab-d-menu) + 74ms) !important; }
+menupopup > :nth-child(10) { animation-delay: calc(var(--ctab-d-menu) + 82ms) !important; }
+menupopup > :nth-child(n + 11) { animation-delay: calc(var(--ctab-d-menu) + 90ms) !important; }
 @keyframes ctab-menu-row {
-  from { opacity: 0; transform: translateY(-5px); }
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* the app menu and the extension panels are built from panelviews, whose rows
@@ -1459,13 +1519,13 @@ menupopup > :nth-child(n + 11) { animation-delay: 90ms !important; }
 panelview .panel-subview-body > * {
   animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph) backwards !important;
 }
-panelview .panel-subview-body > :nth-child(1)  { animation-delay: 0ms !important; }
-panelview .panel-subview-body > :nth-child(2)  { animation-delay: 12ms !important; }
-panelview .panel-subview-body > :nth-child(3)  { animation-delay: 24ms !important; }
-panelview .panel-subview-body > :nth-child(4)  { animation-delay: 34ms !important; }
-panelview .panel-subview-body > :nth-child(5)  { animation-delay: 44ms !important; }
-panelview .panel-subview-body > :nth-child(6)  { animation-delay: 54ms !important; }
-panelview .panel-subview-body > :nth-child(n + 7) { animation-delay: 62ms !important; }
+panelview .panel-subview-body > :nth-child(1)  { animation-delay: calc(var(--ctab-d-menu) + 0ms) !important; }
+panelview .panel-subview-body > :nth-child(2)  { animation-delay: calc(var(--ctab-d-menu) + 12ms) !important; }
+panelview .panel-subview-body > :nth-child(3)  { animation-delay: calc(var(--ctab-d-menu) + 24ms) !important; }
+panelview .panel-subview-body > :nth-child(4)  { animation-delay: calc(var(--ctab-d-menu) + 34ms) !important; }
+panelview .panel-subview-body > :nth-child(5)  { animation-delay: calc(var(--ctab-d-menu) + 44ms) !important; }
+panelview .panel-subview-body > :nth-child(6)  { animation-delay: calc(var(--ctab-d-menu) + 54ms) !important; }
+panelview .panel-subview-body > :nth-child(n + 7) { animation-delay: calc(var(--ctab-d-menu) + 62ms) !important; }
 
 @media (prefers-reduced-motion: reduce) {
   menupopup > menuitem,
@@ -1476,6 +1536,45 @@ panelview .panel-subview-body > :nth-child(n + 7) { animation-delay: 62ms !impor
   panelview .panel-subview-body > * {
     animation: none !important;
   }
+}
+
+/* =========================================================================
+ * The icons that never leave the address bar
+ * =========================================================================
+ * Firefox keeps two kinds of icon in and around the address bar and they
+ * behave completely differently, which is why one of them appears to be stuck:
+ *
+ *   - TRANSIENT anchors, in #notification-popup-box: the key that a "save this
+ *     password?" prompt hangs off, the camera, the location pin. Each exists
+ *     only while its prompt is up and takes itself away afterwards. Nothing
+ *     here touches them - they are already the behaviour that was asked for.
+ *
+ *   - PERMANENT state icons, in #identity-box: #identity-permission-box is a
+ *     KEY (permissions.svg, tooltip "You have granted this website additional
+ *     permissions") and it stays for as long as the site holds any permission
+ *     you have ever granted it. Say yes to notifications once and that key is
+ *     on that site forever. That is the one that never goes away.
+ *
+ * Hiding it loses nothing: the permissions it stands for are all listed behind
+ * the padlock, which is right next to it. It is not MOVED to the right-hand
+ * side because every permission doorhanger anchors to this element - move the
+ * anchor and you move the arrow of every popup that points at it.
+ *
+ * The downloads button is not a CSS problem at all: Firefox already appears it
+ * on the first download and takes it away when the list is emptied, under
+ * `browser.download.autohideButton`, which user.js now sets explicitly. */
+#identity-box #identity-permission-box {
+  display: none !important;
+}
+
+/* The other candidate for "the key", in case the one you are seeing is this:
+   #login-fill-button is the key Firefox puts INSIDE the address bar when the
+   page has a login form it has a saved password for. This keeps it, but only
+   while the address bar is actually being used. Delete this rule to have it
+   back all the time, or copy the `display: none` above onto it to be rid of
+   it entirely. */
+#urlbar:not([focused]):not([open]) #login-fill-button {
+  display: none !important;
 }
 
 /* =========================================================================
