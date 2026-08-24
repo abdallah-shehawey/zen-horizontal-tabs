@@ -87,10 +87,37 @@
   --ctab-private: 128, 116, 255;
 }
 
-/* ---- the toolbox becomes one horizontal row, content sits below it ---- */
-#browser { flex-direction: column !important; }
+/* ---- the toolbox becomes one horizontal row, content sits below it ----
+ * Everything that builds the row is guarded with
+ *     :root:not([chromehidden~="toolbar"])
+ * so it reaches real browser windows only. A POPUP - the window a site opens
+ * with window.open(..., "toolbar=no"), which is what every "Sign in with
+ * Google" button uses - has no tab strip and no window buttons, and Zen lays
+ * it out in a different place: it puts #nav-bar INSIDE
+ * #zen-appcontent-navbar-wrapper, which there is a static, full-width block
+ * sitting above the page - not the top-right box the window buttons live in.
+ *
+ * Unguarded, three rules landed on that layout and took it apart. Measured in
+ * a 520x680 popup, stock Zen against this file:
+ *
+ *                          stock Zen        this file, unguarded
+ *   #nav-bar               0,0  520x38      238,0  280x38   a pill on the right edge
+ *   #tabbrowser-tabbox     0,38 520x642     0,0    520x680  the page slid under it
+ *   #PanelUI-button        483,5 37x28      361,4  37x28    the app menu ON the address
+ *
+ * One cause each: #zen-appcontent-navbar-wrapper going `position: fixed` is
+ * what let the page rise to y=0; its `width: auto` is what shrank the bar onto
+ * the right edge; and #PanelUI-button's `right: 122px` is a gap held open for
+ * window buttons that a popup does not have. With the guard, every visible box
+ * in that popup measures identical to stock Zen.
+ *
+ * Three rules are deliberately NOT guarded: #titlebar, #TabsToolbar and
+ * #zen-sidebar-top-buttons keep this file's heights in a popup. Firefox gives
+ * all three `visibility: collapse` there and they measure zero WIDTH, so they
+ * paint nothing - three more prefixes for no pixel. */
+:root:not([chromehidden~="toolbar"]) #browser { flex-direction: column !important; }
 
-#navigator-toolbox {
+:root:not([chromehidden~="toolbar"]) #navigator-toolbox {
   flex-direction: row !important;
   align-items: center !important;
   /* the row stops short of the window buttons: while the toolbox covered them
@@ -145,7 +172,7 @@
 }
 
 /* app menu sits at the far right, next to the window buttons */
-#PanelUI-button {
+:root:not([chromehidden~="toolbar"]) #PanelUI-button {
   position: fixed !important;
   top: 4px !important;
   right: 122px !important;
@@ -153,7 +180,7 @@
 }
 
 /* ---- URL bar: fixed and compact ---- */
-#nav-bar {
+:root:not([chromehidden~="toolbar"]) #nav-bar {
   width: var(--ctab-url) !important;
   flex: 0 0 var(--ctab-url) !important;
   height: var(--ctab-strip) !important;
@@ -170,9 +197,9 @@
    turns the floating search box into a stretched black bar. The floating
    state is any of [focused] [open] [breakout-extend] [zen-newtab]
    [zen-floating-urlbar]. */
-#nav-bar #urlbar-container { height: var(--ctab-tab-h) !important; min-height: var(--ctab-tab-h) !important; }
+:root:not([chromehidden~="toolbar"]) #nav-bar #urlbar-container { height: var(--ctab-tab-h) !important; min-height: var(--ctab-tab-h) !important; }
 
-#nav-bar #urlbar:not([focused]):not([open]):not([breakout-extend]):not([zen-newtab]):not([zen-floating-urlbar]) {
+:root:not([chromehidden~="toolbar"]) #nav-bar #urlbar:not([focused]):not([open]):not([breakout-extend]):not([zen-newtab]):not([zen-floating-urlbar]) {
   height: var(--ctab-tab-h) !important;
   min-height: var(--ctab-tab-h) !important;
 
@@ -866,7 +893,7 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 #zen-create-new-button { display: none !important; }
 
 /* ---- window buttons stay top-right ---- */
-#zen-appcontent-navbar-wrapper {
+:root:not([chromehidden~="toolbar"]) #zen-appcontent-navbar-wrapper {
   position: fixed !important;
   top: 0 !important;
   right: 0 !important;
@@ -878,7 +905,7 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   visibility: visible !important;
   transform: none !important;
 }
-#zen-appcontent-navbar-container {
+:root:not([chromehidden~="toolbar"]) #zen-appcontent-navbar-container {
   width: auto !important;
   height: var(--ctab-row) !important;
   align-items: center !important;
