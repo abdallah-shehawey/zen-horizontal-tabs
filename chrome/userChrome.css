@@ -54,15 +54,10 @@
   --ctab-page-scale: 0.97;
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
-  --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
-  /* how big the Ctrl+Tab switcher is. ctrlTab.js sizes its thumbnails as
-     `availWidth * 0.85 / 7` and nothing in CSS changes that number, so this
-     scales the whole card - text and spacing are re-laid out at the new size
-     and stay crisp, only the thumbnails are resampled, and they come from
-     PageThumbs storage at a larger size than they are shown at. */
-  --ctab-switch-zoom: 1.12;
-  --ctab-t-menu: 200ms; /* a menu's rows arriving */
-  --ctab-d-menu: 50ms;   /* ...after the popup window has had time to map */
+  /* The Ctrl+Tab switcher and the menus had entrance animations and a scale
+     of their own here. They are gone, and both blocks below carry the
+     measurement that removed them: they were costing about a third of a
+     second of "nothing is happening" on every open. */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 
   /* private windows get their own accent so the window is recognisable at a
@@ -1106,14 +1101,24 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
  *   outline-color on a real 1px outline              26 ms   <- this one
  *
  * So: a 1px transparent inset outline on #nav-bar whose colour cycles between
- * 0% and 0.4% black. It is invisible, it changes no layout, and it costs one
- * style sample per frame. It is also the price of every other animation in
- * this file working every time instead of most of the time.
+ * 0% and 0.4% black. It is invisible and it changes no layout.
  *
- * It is off while the window is not the one you are looking at, and off
- * entirely if you have asked for reduced motion. To switch it off for good,
- * delete the rule - everything else keeps working, entrances just go back to
- * being skipped after the browser has been quiet for a moment. */
+ * IT IS OFF, and this is the trade it lost. What it costs is not one style
+ * sample - it is a wake-up and a composite of the whole window on EVERY frame
+ * for as long as the window is focused, forever. This display runs at 165Hz.
+ * That is 165 composites a second of a 2560x1440 window, bought so that a fade
+ * would not be skipped, and it is exactly the kind of always-on work that
+ * makes a browser feel heavy without ever pointing at a cause.
+ *
+ * Nothing else in this file needs it any more. The switcher and the menus do
+ * not animate at all now (both blocks below carry the measurement), so the
+ * only entrance it was still protecting was the floating address box - and a
+ * box that appears instantly when the clock is stale is not worth a browser
+ * that never sleeps.
+ *
+ * To turn it back on: uncomment the two rules. The address box then fades
+ * every time instead of most times, and the browser paints continuously.
+ *
 @keyframes ctab-clock {
   from { outline-color: rgba(0, 0, 0, 0); }
   50%  { outline-color: rgba(0, 0, 0, 0.004); }
@@ -1124,9 +1129,7 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   outline-offset: -1px !important;
   animation: ctab-clock 4s linear infinite !important;
 }
-@media (prefers-reduced-motion: reduce) {
-  #nav-bar { animation: none !important; }
-}
+ */
 
 /* =========================================================================
  * Ctrl+Tab: the tab switcher
@@ -1150,18 +1153,29 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
  *    invisible instead, and #ctrlTab-previews becomes the visible card,
  *    centred inside it. The frame stays screen-wide and nobody can tell.
  *
- * 2. `border-radius` is silently dropped on everything inside a
- *    .ctrlTab-preview button. Verified in a driven profile: an INLINE
- *    `borderRadius = "44px"` on .ctrlTab-preview, .ctrlTab-preview-inner,
- *    .ctrlTab-canvas and the <canvas> all read back `0px`, while `background`,
- *    `padding` and `display` set the same way all took - and #ctrlTab-previews,
- *    one level up, accepts 44px happily. `clip-path: inset(0 round Npx)` IS
- *    honoured on all of them, so that is what rounds the cards.
+ * 2. Rounding the cards is a fight with the mod, not with Gecko. An INLINE
+ *    `borderRadius = "44px"` on .ctrlTab-preview reads back `0px`, which once
+ *    looked like border-radius being unsupported on these buttons. It is not:
+ *    point 3 below declares `border-radius: var(--psu-...) !important` with an
+ *    unresolvable var, and an author `!important` beats a plain inline style.
+ *    The same declaration made from THIS file wins, because a USER-origin
+ *    `!important` outranks an author one - measured in a driven profile, 44px,
+ *    taken. So the cards are rounded with border-radius.
  *
- *    That has a consequence worth stating: a clip-path clips the box-shadow
- *    too. Any ring or glow on a rounded card has to be painted INSIDE it -
- *    hence the focus ring is an `inset` shadow on the inner box, not an
- *    outline around the card.
+ *    That is worth more than tidiness. `clip-path: inset(0 round Npx)` rounds
+ *    them too, and this file used to use it on four elements per card - the
+ *    card, the thumbnail box, the <canvas> inside it, and the favicon. A
+ *    rounded clip-path is a MASK: the subtree is drawn to an intermediate
+ *    surface and composited back through it, and there were up to 28 of those,
+ *    nested, over seven ~310px thumbnails, rebuilt on every paint of the
+ *    panel. border-radius takes the rounded-rect clip fast path instead.
+ *    Measured while stepping through the cards with Ctrl held: a 17.0ms median
+ *    frame became 8.8ms.
+ *
+ *    The focus ring stays an `inset` shadow anyway. It no longer has to be
+ *    (border-radius does not clip a box-shadow the way a clip-path does), but
+ *    a ring painted outside the card would sit in the gap and touch its
+ *    neighbour.
  *
  * 3. If the "Better CtrlTab Panel" mod is installed (chrome/zen-themes/,
  *    prefs psu.better_ctrltab.*), most of what it declares is dead: its
@@ -1194,15 +1208,34 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
    is the height of a SINGLE row of thumbnails - so the moment the cards wrap
    the box is taller than the estimate, grows downward from a top computed for
    a short panel, and sits visibly below centre. Nothing in CSS moves a popup
-   that JS has already placed. Same story sideways: `panel.style.width` is
-   written inline from the tab count and anything wider than it is clipped by
-   the popup window, which is what caps the scale below.
+   that JS has already placed.
 
-   No backdrop-filter here. It was blurring a ~1800x640 region of a
-   screen-wide transparent popup on every frame, on top of seven scaled
-   canvases, and that is what made holding Ctrl feel like the browser had
-   stalled. The card is 92% opaque anyway - the blur was buying almost
-   nothing. */
+   No backdrop-filter, no zoom, no entrance. Those three are what made this
+   panel feel like the browser had stalled, and each one was measured:
+
+     backdrop-filter: blur(28px)   blurring a ~1800x640 region of a
+                                   screen-wide transparent popup on every
+                                   frame, on top of seven scaled canvases,
+                                   for a card that is 92% opaque anyway
+     zoom: 1.12                    re-samples every thumbnail at paint time,
+                                   and puts the whole subtree in a scaled
+                                   coordinate space
+     the entrance                  the real one. Firefox already waits 200ms
+                                   before it shows this panel at all (so that
+                                   a quick Ctrl+Tab just flips back), and the
+                                   fade then held the cards invisible for
+                                   ANOTHER 325ms measured from popupshown.
+                                   Half a second after the key before there
+                                   was anything to look at. Without it the
+                                   cards are on screen in the same frame the
+                                   popup maps: +0ms, measured the same way.
+
+   If you want the cards bigger and do not mind the resampling, put
+   `zoom: 1.12` back on this rule - but cap it: the popup window is
+   `canvasWidth * 1.25` per tab (~389px) while a card plus its gap is ~341px,
+   so past ~1.14 the row is wider than the window it lives in and the ends are
+   cut off, and at seven tabs the `availWidth * 0.99` cap leaves almost no
+   slack at all. */
 :root #ctrlTab-panel #ctrlTab-previews {
   display: flex !important;
   flex-direction: row !important;
@@ -1214,45 +1247,32 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   width: max-content !important;
   margin: 0 auto !important;
   align-self: center !important;
-  zoom: var(--ctab-switch-zoom) !important;
   background: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   border-radius: var(--psu-roundness-zoomed, 24px) !important;
   box-shadow:
-    0 28px 56px -18px rgba(0, 0, 0, 0.6),
+    0 14px 30px -16px rgba(0, 0, 0, 0.55),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
 }
 
-/* How much bigger the card can get, which is a ceiling rather than a taste:
-   the popup window is `canvasWidth * 1.25` per tab (~389px) while a card plus
-   its gap is ~341px, so there is only ~14% of slack before the row is wider
-   than the window it lives in and the ends are cut off. Seven cards hit the
-   `availWidth * 0.99` cap instead and have almost none. */
-:root #ctrlTab-panel:has(#ctrlTab-previews .ctrlTab-preview:nth-child(7):not([hidden])) #ctrlTab-previews {
-  zoom: 1.05 !important;
-}
-
-/* the cards */
+/* the cards. Nothing transitions: this panel is driven by a held key, every
+   Tab moves the highlight, and a transition would have the whole row
+   repainting between keystrokes for a 110ms fade nobody waits to see. */
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
   margin: 0 !important;
   padding: 0 !important;
-  clip-path: inset(0 round 18px) !important;
-  transition: transform var(--ctab-t-fast) var(--ctab-ease) !important;
-}
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus {
-  transform: translateY(-4px) !important;
+  border-radius: 18px !important;
+  clip-path: none !important;
 }
 
 /* the highlight surface. It is a background rather than a border because the
-   card's clip-path is what rounds it - see note 2 above. */
+   card is rounded and a border would be a second rounded edge inside the
+   first. */
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-preview-inner {
   margin: 0 !important;
   padding: 10px !important;
   border: none !important;
   background-color: transparent !important;
   text-shadow: none !important;
-  transition:
-    background-color var(--ctab-t-fast) ease-out,
-    box-shadow var(--ctab-t-fast) ease-out !important;
 }
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-preview-inner {
   background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
@@ -1260,15 +1280,17 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
     color-mix(in srgb, var(--zen-primary-color, #7aa2ff) 70%, transparent) !important;
 }
 
-/* the thumbnail */
+/* the thumbnail. One rounded clip, on the image itself - the box around it
+   does not need a second one. */
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas {
   margin: 0 0 8px 0 !important;
   box-shadow: none !important;
-  clip-path: inset(0 round 12px) !important;
+  clip-path: none !important;
 }
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas > canvas,
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview .ctrlTab-canvas > img {
-  clip-path: inset(0 round 12px) !important;
+  border-radius: 12px !important;
+  clip-path: none !important;
 }
 
 /* the title. Firefox draws it bold with two text-shadows because the panel
@@ -1280,7 +1302,6 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   font-weight: 500 !important;
   text-shadow: none !important;
   opacity: 0.62 !important;
-  transition: opacity var(--ctab-t-fast) ease-out !important;
 }
 :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:focus .ctrlTab-label {
   opacity: 1 !important;
@@ -1297,7 +1318,8 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
   padding: 5px !important;
   margin: -42px 6px 0 0 !important;
   background-color: rgba(24, 24, 28, 0.92) !important;
-  clip-path: inset(0 round 10px) !important;
+  border-radius: 10px !important;
+  clip-path: none !important;
   box-shadow: none !important;
 }
 
@@ -1309,7 +1331,7 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 :root #ctrlTab-panel #ctrlTab-showAll {
   border: none !important;
   border-radius: 999px !important;
-  clip-path: inset(0 round 999px) !important;
+  clip-path: none !important;
   padding: 6px 16px !important;
   background-color: var(--psu-better_ctrltab-background, rgba(20, 20, 24, 0.92)) !important;
   text-shadow: none !important;
@@ -1318,44 +1340,6 @@ zen-workspace[active]:not(:has(.zen-workspace-pinned-tabs-section > .tabbrowser-
 :root #ctrlTab-panel #ctrlTab-showAll:focus,
 :root #ctrlTab-panel #ctrlTab-showAll:hover {
   background-color: color-mix(in srgb, currentColor 20%, transparent) !important;
-}
-
-/* the entrance. Same curve as the floating address box, and it replays on
-   every open rather than only the first: Gecko throws away a popup's frames
-   when it closes and builds them again when it opens. The stagger is short
-   because this panel is opened WHILE a key is held - by the time the second
-   Tab lands the entrance has to be finished and out of the way. It reads down
-   the grid in DOM order, which is the order Tab walks them in. */
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview {
-  animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
-}
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(1) { animation-delay: calc(var(--ctab-d-menu) + 0ms) !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(2) { animation-delay: calc(var(--ctab-d-menu) + 26ms) !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(3) { animation-delay: calc(var(--ctab-d-menu) + 48ms) !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(4) { animation-delay: calc(var(--ctab-d-menu) + 66ms) !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(5) { animation-delay: calc(var(--ctab-d-menu) + 80ms) !important; }
-:root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview:nth-child(n + 6) { animation-delay: calc(var(--ctab-d-menu) + 90ms) !important; }
-@keyframes ctab-ctrltab-card {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-:root #ctrlTab-panel #ctrlTab-previews {
-  animation: ctab-ctrltab-box var(--ctab-t-panel) var(--ctab-ease-morph) backwards !important;
-}
-@keyframes ctab-ctrltab-box {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-:root #ctrlTab-panel #ctrlTab-showAll-container {
-  animation: ctab-ctrltab-card var(--ctab-t-panel) var(--ctab-ease-morph) 96ms backwards !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root #ctrlTab-panel #ctrlTab-previews,
-  :root #ctrlTab-panel #ctrlTab-previews .ctrlTab-preview,
-  :root #ctrlTab-panel #ctrlTab-showAll-container {
-    animation: none !important;
-  }
 }
 
 /* =========================================================================
@@ -1483,60 +1467,28 @@ panel toolbarseparator {
   margin-inline: 12px !important;
 }
 
-/* ---- opening ----
-   Short on purpose. A menu is opened to be clicked, often before it has
-   finished appearing, so the entrance has to be over by the time the pointer
-   arrives: 130ms each, 10ms apart, everything in by ~230ms even on a long
-   right-click menu. The rows drop 5px rather than sliding in from the side -
-   a menu comes DOWN out of its anchor, and moving them sideways fights that.
-   Hidden items still count in nth-child, so a menu that hides half its rows
-   gets a slightly uneven cadence; at 10ms a step that is not visible. */
-menupopup > menuitem,
-menupopup > menu,
-menupopup > menuseparator,
-menupopup > menugroup,
-menupopup > menucaption {
-  animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph) backwards !important;
-}
-menupopup > :nth-child(1)  { animation-delay: calc(var(--ctab-d-menu) + 0ms) !important; }
-menupopup > :nth-child(2)  { animation-delay: calc(var(--ctab-d-menu) + 10ms) !important; }
-menupopup > :nth-child(3)  { animation-delay: calc(var(--ctab-d-menu) + 20ms) !important; }
-menupopup > :nth-child(4)  { animation-delay: calc(var(--ctab-d-menu) + 30ms) !important; }
-menupopup > :nth-child(5)  { animation-delay: calc(var(--ctab-d-menu) + 40ms) !important; }
-menupopup > :nth-child(6)  { animation-delay: calc(var(--ctab-d-menu) + 50ms) !important; }
-menupopup > :nth-child(7)  { animation-delay: calc(var(--ctab-d-menu) + 58ms) !important; }
-menupopup > :nth-child(8)  { animation-delay: calc(var(--ctab-d-menu) + 66ms) !important; }
-menupopup > :nth-child(9)  { animation-delay: calc(var(--ctab-d-menu) + 74ms) !important; }
-menupopup > :nth-child(10) { animation-delay: calc(var(--ctab-d-menu) + 82ms) !important; }
-menupopup > :nth-child(n + 11) { animation-delay: calc(var(--ctab-d-menu) + 90ms) !important; }
-@keyframes ctab-menu-row {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
+/* ---- opening: it does not, and that is deliberate ----
+   There WAS an entrance here - the rows fading in one after another, 200ms
+   each, 10ms apart, behind a 50ms hold that gave the popup window time to map.
+   It is gone, and the reason is a measurement rather than a change of taste.
 
-/* the app menu and the extension panels are built from panelviews, whose rows
-   are light DOM too - same entrance, same reasoning */
-panelview .panel-subview-body > * {
-  animation: ctab-menu-row var(--ctab-t-menu) var(--ctab-ease-morph) backwards !important;
-}
-panelview .panel-subview-body > :nth-child(1)  { animation-delay: calc(var(--ctab-d-menu) + 0ms) !important; }
-panelview .panel-subview-body > :nth-child(2)  { animation-delay: calc(var(--ctab-d-menu) + 12ms) !important; }
-panelview .panel-subview-body > :nth-child(3)  { animation-delay: calc(var(--ctab-d-menu) + 24ms) !important; }
-panelview .panel-subview-body > :nth-child(4)  { animation-delay: calc(var(--ctab-d-menu) + 34ms) !important; }
-panelview .panel-subview-body > :nth-child(5)  { animation-delay: calc(var(--ctab-d-menu) + 44ms) !important; }
-panelview .panel-subview-body > :nth-child(6)  { animation-delay: calc(var(--ctab-d-menu) + 54ms) !important; }
-panelview .panel-subview-body > :nth-child(n + 7) { animation-delay: calc(var(--ctab-d-menu) + 62ms) !important; }
+   Because a popup frame cannot be animated (see above), the only thing that
+   can move is the rows, and rows fading in one at a time is precisely what
+   "the menu hangs while it fills up" looks like. Measured on a 19-row
+   right-click menu, from `popupshown`:
 
-@media (prefers-reduced-motion: reduce) {
-  menupopup > menuitem,
-  menupopup > menu,
-  menupopup > menuseparator,
-  menupopup > menugroup,
-  menupopup > menucaption,
-  panelview .panel-subview-body > * {
-    animation: none !important;
-  }
-}
+     with the entrance   the last row was not fully visible until +310ms
+     without it          +0ms - the whole menu is there in the frame that
+                         maps it
+
+   A menu is opened to be clicked, usually before it has finished appearing,
+   so a third of a second of assembly is not decoration, it is latency. The
+   same run also caught the entrance failing to play at all on one open out of
+   three, which is the stale-refresh-clock problem in the block above - so what
+   was left was an animation that was either slow or absent.
+
+   The shape stays: rounded box, real padding, rounded rows, a hover that comes
+   from currentColor. Only the motion is gone. */
 
 /* =========================================================================
  * The icons that never leave the address bar

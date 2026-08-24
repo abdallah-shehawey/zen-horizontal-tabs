@@ -67,10 +67,6 @@ Every size lives in one place, the top of `chrome/userChrome.css`:
   --ctab-t-tab: 190ms;   /* a tab growing or collapsing */
   --ctab-t-peek: 130ms;  /* the hover preview */
   --ctab-t-omni: 300ms;  /* the floating address box arriving */
-  --ctab-t-panel: 200ms; /* the Ctrl+Tab switcher arriving */
-  --ctab-switch-zoom: 1.3;  /* how big the Ctrl+Tab switcher is */
-  --ctab-t-menu: 200ms;     /* a menu's rows arriving */
-  --ctab-d-menu: 50ms;      /* ...held until the popup window is mapped */
   --ctab-bm: 32px;          /* the bookmarks strip */
   --ctab-t-fast: 110ms;  /* colour, hover, press */
 }
@@ -124,15 +120,19 @@ in a horizontal row they are a vertical hop: `margin-bottom` on tab open/close
 (the horizontal equivalent, the width transition, is already free) and a stray
 `transform: translateY()` on the pinned-tabs separator.
 
-Menus and panels are shaped **and** their contents animate: rounded inset row
+Menus and panels are **shaped but not animated**: rounded inset row
 highlights, hairline separators pulled in from the edges, a 16px corner radius,
-and the rows dropping in 5px on a 10ms stagger every time the menu opens. The
-box itself arrives instantly, because a popup's own frame genuinely cannot be
-animated - an `animation` on `menupopup` and one on `menupopup::part(content)`
-both produce **zero** entries in `getAnimations()`. Its children are ordinary
-light DOM and animate perfectly, and Gecko rebuilds a popup's frames on every
-open, so the entrance replays each time rather than only the first. Closing is
-not animated and cannot be: the popup is torn down synchronously.
+real padding - and no motion at all. There was an entrance, and it was measured
+out again. A popup's own frame genuinely cannot be animated (an `animation` on
+`menupopup` and one on `menupopup::part(content)` both produce **zero** entries
+in `getAnimations()`), so the only thing that could move was the rows, and rows
+fading in one after another is exactly what "the menu hangs while it fills up"
+looks like. On a 19-row right-click menu, measured from `popupshown`: with the
+entrance the last row was not fully visible until **+310ms**; without it,
+**+0ms** - the whole menu is there in the frame that maps it. A menu is opened
+to be clicked, often before it has finished appearing, so that third of a
+second was not decoration, it was latency. Closing was never animated and
+cannot be: the popup is torn down synchronously.
 
 Shape reaches the box the same indirect way: `menupopup::part(content)` is not
 honoured from USER origin (a `padding: 21px` set that way left the part at
@@ -144,12 +144,13 @@ own OS-level window and both routes are closed from a user stylesheet:
 `panel::part(content)` is not honoured from USER origin (verified - an
 `outline` set that way never reached the element), and `-moz-window-transform`
 / `-moz-window-opacity` are not supported in this build. What a popup's
-*contents* do is another matter, and they are the best case in the whole file:
-Gecko throws away a popup's frames when it closes and builds them again when it
-opens, so an animation on something inside one replays on every open rather
-than only the first. That is how the Ctrl+Tab switcher's cards arrive.
+*contents* do is another matter: Gecko throws away a popup's frames when it
+closes and builds them again when it opens, so an animation on something inside
+one replays on every open rather than only the first. That is what made an
+entrance possible at all - and both places that used one, the menus and the
+Ctrl+Tab switcher, have since had it removed for the latency it cost.
 
-### Why one pixel of `#nav-bar` is never still
+### Why one pixel of `#nav-bar` used to be never still
 
 Firefox stops its refresh driver when nothing is changing on screen, and it
 does not reset the animation clock when it starts again. An animation created
@@ -176,13 +177,17 @@ complete quiet:
 | `background-color` on a 1px `::after` | 12 565 ms - XUL box, the pseudo never rendered |
 | **`outline-color` on a real 1px outline** | **26 ms** |
 
-So `#nav-bar` carries a 1px transparent inset outline whose colour cycles
-between 0% and 0.4% black. It is invisible, it changes no layout, and it costs
-one style sample per frame - which is a real cost, so it is off while the
-window is not the one you are looking at, and off entirely under
-`prefers-reduced-motion`. Delete the `ctab-clock` rule to be rid of it;
-everything else keeps working, entrances just go back to being skipped
-whenever the browser has been quiet for a moment.
+That keep-alive is in the file, and it is **commented out**. What it costs is
+not one style sample: it is a wake-up and a composite of the whole window on
+every frame for as long as the window is focused, forever. This display runs at
+165Hz, so it is 165 composites a second of a 2560x1440 window bought so that a
+fade would not be skipped - the kind of always-on work that makes a browser
+feel heavy without ever pointing at a cause. Since the menus and the switcher
+no longer animate, the only entrance left to protect was the floating address
+box, and a box that sometimes appears instantly is the better trade.
+
+Uncomment the `ctab-clock` rule to get it back: the address box then fades
+every time instead of most times, and the browser paints continuously.
 
 ### The Ctrl+Tab switcher
 
@@ -195,23 +200,39 @@ screen. Overriding the width from CSS would leave the popup anchored where a
 2530px box was meant to start, i.e. against the left edge.
 
 So the popup frame is made **invisible** and `#ctrlTab-previews` becomes the
-visible card, centred inside it: a dark rounded panel laid out as a grid - two
-across for four tabs, three for five or six, four for seven - with the frame
-staying screen-wide behind it where nobody can see it. Columns are `max-content`
-because the thumbnails are bitmaps `ctrlTab.js` has already sized; stretching
-them to fractions would resample every one.
+visible card, centred inside it: a dark rounded panel in **one row**, with the
+frame staying screen-wide behind it where nobody can see it. One row is
+structural too - `ctrlTab.js` positions the popup vertically at
+`(availHeight - (canvasHeight * 1.25 + 75)) / 2`, the height of a *single* row
+of thumbnails, so a wrapped grid is taller than the estimate, grows downward
+from a top computed for a short panel, and sits visibly below centre.
 
-Two things worth knowing before editing that section:
+Three things were tried here and measured back out, and the panel is fast
+because none of them survived:
 
-- **`border-radius` is silently dropped on anything inside a `.ctrlTab-preview`
-  button.** Verified by inline style in a driven profile: `44px` on the card,
-  the inner box, the canvas wrapper and the `<canvas>` all read back `0px`,
-  while `background`, `padding` and `display` set the same way all applied -
-  and `#ctrlTab-previews`, one level up, takes `44px` happily. Rounding there
-  is done with `clip-path: inset(0 round Npx)`, which is honoured everywhere.
-- **A clip-path clips the box-shadow too**, so a ring on a rounded card has to
-  be painted inside it. The selected card is a filled background plus an
-  `inset` ring, not an outline.
+| removed | why |
+|---|---|
+| `backdrop-filter: blur(28px)` | blurring a ~1800x640 region of a screen-wide transparent popup every frame, over seven scaled canvases, for a card that is 92% opaque anyway |
+| `zoom: 1.12` | resamples every thumbnail at paint time and puts the subtree in a scaled coordinate space |
+| the entrance | Firefox already waits 200ms before showing this panel; the fade then held the cards invisible for **another 325ms** after `popupshown`. Without it: **+0ms** |
+
+Stepping through the cards with Ctrl held went from a **17.0ms** median frame
+to **8.8ms** across those changes, and to **6.1ms** - a full 165Hz - in the
+shipped file.
+
+Rounding is worth a note of its own, because the old one here was wrong.
+An inline `borderRadius = "44px"` on a `.ctrlTab-preview` reads back `0px`,
+which looked like border-radius being unsupported on those buttons. It is not:
+the **Better CtrlTab Panel** mod declares `border-radius: var(--psu-...)
+!important` with an unresolvable var, and an author `!important` beats a plain
+inline style. The same declaration made from `userChrome.css` wins, because a
+USER-origin `!important` outranks an author one - measured, 44px, taken. That
+matters for speed, not tidiness: `clip-path: inset(0 round Npx)` rounds these
+elements too, and the file used to use it on four elements per card. A rounded
+clip-path is a **mask** - the subtree is drawn to an intermediate surface and
+composited back through it - and there were up to 28 of those, nested, over
+seven ~310px thumbnails, rebuilt on every paint. `border-radius` takes the
+rounded-rect fast path.
 
 If the **Better CtrlTab Panel** mod is installed, most of what it declares is
 dead: its palette and metrics sit in a commented-out block and it expects Zen
@@ -222,6 +243,11 @@ then evaluate to zero, which is where the flat grey sheet, the missing padding
 and the square corners came from. Every value here outranks those selectors and
 passes through `var(--psu-..., fallback)`, so the mod still wins whenever it
 does resolve.
+
+Want the cards bigger? Put `zoom: 1.12` back on `#ctrlTab-previews` and accept
+the resampling - but cap it there: the popup window is `canvasWidth * 1.25` per
+tab (~389px) while a card plus its gap is ~341px, so past ~1.14 the row is
+wider than the window it lives in and the ends are cut off.
 
 ## The bookmarks strip, and two icons
 
